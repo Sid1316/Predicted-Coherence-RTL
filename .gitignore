@@ -1,0 +1,31 @@
+# Build output
+build/
+obj_dir/
+
+# Waveforms
+*.vcd
+*.fst
+*.fst.hier
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# cocotb
+sim_build/
+results.xml
+
+# RISCOF
+riscof_work/
+
+# Synthesis scratch (reports in syn/reports/ are kept)
+syn/out/
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

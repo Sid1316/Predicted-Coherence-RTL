@@ -1,0 +1,9 @@
+# Everything is built inside WSL2/Linux: keep LF line endings in the repo and
+# in the working tree, so shell scripts and the Makefile work there even when
+# the files were edited on Windows.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.pdf binary
+*.elf binary
