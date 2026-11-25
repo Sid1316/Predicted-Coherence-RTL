@@ -320,6 +320,8 @@ Replicating the data across lanes means the memory only needs to look at `be`.
 
 **Misalignment:** `misaligned_access = (size == HALF & addr[0]) | (size == WORD & addr[1:0] != 0)`. When it is set, the request's `valid` is held low (no memory side effect) and the core stops (§10).
 
+**Request fields:** `valid = enable & (mem_read | mem_write) & ~misaligned_access`, and `misaligned_o` is gated by `enable` the same way. `be` carries the access mask for loads as well as stores (memory ignores it when `we = 0`), so the core takes `mem_rmask`/`mem_wmask` (§9) from it; `be = 0` when `valid = 0`. `addr` is passed through unchanged. The unused `mem_size` encoding 3 gives `be = 0`, `wdata = 0` and `load_data = 0`.
+
 ---
 
 ## 6. Module specifications

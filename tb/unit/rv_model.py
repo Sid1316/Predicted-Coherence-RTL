@@ -187,3 +187,95 @@ def branch_ref(op_name: str, a: int, b: int) -> int:
     if op_name == "BR_GEU":
         return int(a >= b)
     raise ValueError(f"unknown branch op {op_name}")
+
+
+# ---------------------------------------------------------------------------
+# Packed structs (spec §8.2, §8.3)
+# ---------------------------------------------------------------------------
+# Fields in declaration order with their widths. In a SystemVerilog packed
+# struct the first field is the most significant.
+
+CTRL_FIELDS = [
+    ("imm_type", 3), ("op_a_sel", 2), ("op_b_sel", 1), ("alu_op", 4),
+    ("wb_sel", 2), ("reg_write", 1), ("mem_read", 1), ("mem_write", 1),
+    ("mem_size", 2), ("mem_unsigned", 1), ("branch", 1), ("br_op", 3),
+    ("jump", 1), ("jalr", 1), ("is_fence", 1), ("is_ecall", 1),
+    ("is_ebreak", 1), ("illegal", 1),
+]  # 28 bits
+DMEM_REQ_FIELDS = [("valid", 1), ("we", 1), ("be", 4), ("addr", 32), ("wdata", 32)]  # 70 bits
+DMEM_RSP_FIELDS = [("ready", 1), ("rdata", 32), ("err", 1)]  # 34 bits
+
+
+def struct_width(fields: list[tuple[str, int]]) -> int:
+    return sum(w for _, w in fields)
+
+
+def struct_pack(fields: list[tuple[str, int]], **values: int) -> int:
+    """Packed-struct integer; fields not given are 0."""
+    unknown = set(values) - {name for name, _ in fields}
+    if unknown:
+        raise ValueError(f"unknown field(s) {sorted(unknown)}")
+    word = 0
+    for name, width in fields:
+        v = values.get(name, 0)
+        if v >> width:
+            raise ValueError(f"{name}={v:#x} does not fit in {width} bits")
+        word = (word << width) | v
+    return word
+
+
+def struct_unpack(fields: list[tuple[str, int]], word: int) -> dict[str, int]:
+    out = {}
+    for name, width in reversed(fields):
+        out[name] = word & ((1 << width) - 1)
+        word >>= width
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Load/store unit (spec §5.4, §6.8)
+# ---------------------------------------------------------------------------
+
+# mem_size_t, in declaration order (spec §8.2)
+MEM_SIZES = {"MEM_B": 0, "MEM_H": 1, "MEM_W": 2}
+SIZE_BYTES = {"MEM_B": 1, "MEM_H": 2, "MEM_W": 4}
+
+
+def lsu_misaligned(size_name: str, addr: int) -> bool:
+    """Spec §5.4: halfwords need addr[0] = 0, words addr[1:0] = 0."""
+    return addr % SIZE_BYTES[size_name] != 0
+
+
+def lsu_ref(*, size_name: str, unsigned: int, mem_read: int, mem_write: int, enable: int,
+            addr: int, store_data: int, rdata: int, err: int) -> dict[str, int | None]:
+    """Expected LSU outputs. load_data is None where it is don't-care
+    (no load, or a misaligned one); the tests then check it is only X-free."""
+    addr &= MASK32
+    off = addr & 3
+    nbytes = SIZE_BYTES[size_name]
+    is_mem = bool(mem_read or mem_write)
+    mis = lsu_misaligned(size_name, addr)
+    valid = bool(enable and is_mem and not mis)
+
+    # Bytes off .. off+nbytes-1 of the word are accessed.
+    mask = ((1 << nbytes) - 1) << off if not mis else None
+    # Each lane holds store_data's byte (lane mod nbytes), so the accessed
+    # lanes carry store_data[nbytes*8-1:0] in order.
+    sd = store_data.to_bytes(4, "little")
+    wdata = int.from_bytes(bytes(sd[lane % nbytes] for lane in range(4)), "little")
+
+    load_data = None
+    if mem_read and not mis:
+        raw = (rdata >> (8 * off)) & ((1 << (8 * nbytes)) - 1)
+        load_data = raw if (unsigned or nbytes == 4) else sext(raw, 8 * nbytes)
+
+    return {
+        "valid": int(valid),
+        "we": int(valid and bool(mem_write)),
+        "be": mask if valid else 0,
+        "addr": addr,
+        "wdata": wdata,
+        "load_data": load_data,
+        "misaligned": int(bool(enable and is_mem and mis)),
+        "bus_err": int(valid and bool(err)),
+    }
