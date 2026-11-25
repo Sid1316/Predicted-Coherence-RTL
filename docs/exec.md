@@ -155,7 +155,7 @@ Each block gets a cocotb test in `tb/unit/test_<block>.py`, with randomized chec
 **Exit criteria:** `make unit` passes; every block is lint-clean.
 
 ### M3: Core integration (M)
-- [ ] **M3.1** `rv_pc`: PC register, next-PC = PC+4 / branch target / JAL target / JALR target (`& ~1`), misaligned-target detection.
+- [x] **M3.1** `rv_pc`: PC register, next-PC = PC+4 / branch target / JAL target / JALR target (`& ~1`), misaligned-target detection.
 - [ ] **M3.2** `rv_core`: connect fetch → decode → regfile read → ALU/branch → LSU → writeback. Drive the retire trace port and the `halt` / error flags.
 - [ ] **M3.3** `rv_mem_model` + `rv_soc_sim`: dual-port memory with `$readmemh`, `tohost` and console MMIO decode.
 - [ ] **M3.4** `tb_top.cpp`: load hex, apply reset, run until `halt`, `tohost` write, error flag or cycle timeout. Optional FST waves (`+waves`). Print the console stream. Write the retire log (spec.md §9.2) and return the exit codes from spec.md §11.

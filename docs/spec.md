@@ -44,6 +44,7 @@ The review was done on 2026-11-25 against the pinned submodules (`tests/riscv-te
 | R-5 | §15.1 | `misalign1-jalr-01` (JALR with target bit 0 set, which must be cleared, so no trap) was not listed. | Added to the JALR row, and the bit-0 case added to directed test `e04`. "(if present)" removed, since `ld_st` and `st_ld` exist and use only aligned RV32 accesses. Suite totals added. |
 | R-6 | §2.2 | Verilator's `--x-initial unique` alone gives **zeros** unless the run also asks for random values. | Added the runtime plusargs. |
 | R-7 | §3.1 | The build flow assumes Spike, which has no native Windows build. | Note added; the reference model is an open decision (exec.md §8). |
+| R-8 | §6.2 | exec.md M3.1 has `rv_pc` choose the next PC and detect misaligned targets, but §6.2 gave it only a `next_pc_i` input, leaving §5.2 in `rv_core` where it could not be unit-tested. | `rv_pc` now holds all of §5.2: new inputs for the control bits, branch result and target, new outputs `next_pc_o` and `misaligned_fetch_o`. Behaviour unchanged. |
 
 ---
 
@@ -343,12 +344,22 @@ All ports use `_i` / `_o` suffixes. Widths are 32 bits unless shown.
 Parameter: `RESET_PC`.
 
 ### 6.2 `rv_pc`
+PC register plus the whole next-PC logic of §5.2, so that logic can be unit-tested on its own.
+
 | Port | Dir | Description |
 |---|---|---|
-| `clk_i`, `rst_i` | in | |
-| `next_pc_i` | in | From next-PC mux |
+| `clk_i`, `rst_i` | in | Clock, sync active-high reset (`pc_q ← RESET_PC`) |
+| `halted_i` | in | `halted_q` |
+| `stop_i` | in | Any §10 stop condition this cycle (may include `misaligned_fetch_o`; no loop, since that output does not depend on `stop_i`) |
+| `jump_i`, `jalr_i`, `branch_i` | in | `ctrl.jump`, `ctrl.jalr`, `ctrl.branch` |
+| `br_taken_i` | in | `rv_branch_unit.taken_o` |
+| `target_i` | in | `alu_res` |
 | `pc_o` | out | Current PC (`pc_q`) |
 | `pc_plus4_o` | out | `pc_q + 4` |
+| `next_pc_o` | out | `next_pc` (§5.2); also the retire port's `pc_wdata` |
+| `misaligned_fetch_o` | out | `misaligned_fetch` (§5.2) |
+
+Parameter: `RESET_PC` (passed down from `rv_core`).
 
 ### 6.3 `rv_decoder` (purely combinational)
 | Port | Dir | Description |

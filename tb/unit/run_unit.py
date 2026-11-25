@@ -33,6 +33,7 @@ BLOCKS = {
     "rv_branch_unit": ["rv_pkg.sv", "rv_branch_unit.sv"],
     "rv_lsu": ["rv_pkg.sv", "rv_lsu.sv"],
     "rv_decoder": ["rv_pkg.sv", "rv_decoder.sv"],
+    "rv_pc": ["rv_pc.sv"],
 }
 
 

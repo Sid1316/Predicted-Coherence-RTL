@@ -4,7 +4,7 @@
 //
 // Uncomment each file as it is added:
 rtl/rv_pkg.sv
-// rtl/rv_pc.sv
+rtl/rv_pc.sv
 rtl/rv_decoder.sv
 rtl/rv_imm_gen.sv
 rtl/rv_regfile.sv

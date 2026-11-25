@@ -387,3 +387,24 @@ def encode(name: str, rand_bits: int) -> int:
     """A legal word for instruction `name`, with every free bit taken from rand_bits."""
     r = ENCODINGS[name]
     return (rand_bits & ~r["mask"] & MASK32) | r["match"]
+
+
+# ---------------------------------------------------------------------------
+# PC and next-PC logic (spec §5.2, §6.2)
+# ---------------------------------------------------------------------------
+
+RESET_PC = 0x8000_0000  # spec §2.4
+
+
+def next_pc_ref(*, pc: int, halted: int, stop: int, jump: int, jalr: int, branch: int,
+                br_taken: int, target: int) -> tuple[int, int]:
+    """(next_pc, misaligned_fetch) for one cycle, written from the §5.2 prose:
+    a jump always redirects, a branch only when taken; JALR clears bit 0;
+    a redirect to an address with bit 1 set is a misaligned fetch; a halted or
+    stopping core keeps its PC."""
+    redirects = bool(jump) or (bool(branch) and bool(br_taken))
+    dest = target & ~1 & MASK32 if jalr else target & MASK32
+    misaligned = int(redirects and bool(dest & 0b10))
+    if halted or stop:
+        return pc, misaligned
+    return (dest if redirects else (pc + 4) & MASK32), misaligned
