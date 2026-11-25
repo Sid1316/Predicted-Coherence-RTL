@@ -46,6 +46,7 @@ The review was done on 2026-11-25 against the pinned submodules (`tests/riscv-te
 | R-7 | §3.1 | The build flow assumes Spike, which has no native Windows build. | Note added; the reference model is an open decision (exec.md §8). |
 | R-8 | §6.2 | exec.md M3.1 has `rv_pc` choose the next PC and detect misaligned targets, but §6.2 gave it only a `next_pc_i` input, leaving §5.2 in `rv_core` where it could not be unit-tested. | `rv_pc` now holds all of §5.2: new inputs for the control bits, branch result and target, new outputs `next_pc_o` and `misaligned_fetch_o`. Behaviour unchanged. |
 | R-9 | §6.1, §6.8, §9.1, §14.3, §14.4 | Writing `rv_core` (M3.2) needed four details the spec left open: what the datapath sees on a fetch error; whether `rv_lsu.enable_i` blocks a store during reset (§2.2 says no memory writes in reset, but §6.8 gated only on `halted_q` and the fetch error); which retire fields an instruction that reads no register, or that stops, reports; and how simulation-only assertions are written. | On a fetch error (and while idle) the instruction word is forced to 0, so the untrusted word never reaches the datapath, and the retire port shows `insn = 0`. `enable_i` also includes `~rst_i`. `rs1_*`/`rs2_*` are 0 for an operand the instruction does not read (as in RVFI); the `mem_*` fields are 0 for a stopping instruction. Assertion blocks use a plain `always @(posedge clk_i)` under `` `ifndef SYNTHESIS ``. `make lint` now lints with `--top-module rv_core`. |
+| R-10 | §2.2, §11 | Writing the harness (M3.4) needed: an exit code for an RTL assertion or `$fatal` (Verilator's default handler exits with 1, the "tohost fail" code); what makes `+hex=` bad (Verilator's `$readmemh` reads a word such as `ZZZZZZZZ` as random bits without an error); which stream the console and the result use; and the default random-reset seed. | New exit code 6 (simulation error). `+hex=` is required and checked before loading (format, every word inside RAM); a bad image is exit 5. stdout carries only console bytes, unchanged; the harness's result line goes to stderr. Without `+verilator+` plusargs the harness uses `rand+reset+2` and seed 1, so runs are repeatable (N-5). |
 
 ---
 
@@ -106,7 +107,7 @@ The review was done on 2026-11-25 against the pinned submodules (`tests/riscv-te
 - **One clock**, `clk`. Every flop in the design is on its rising edge.
 - **Reset** `rst`: synchronous, active-high, held for at least 2 cycles by the harness.
 - During reset: `pc_q ← RESET_PC`, `halted_q ← 0`, retire counter ← 0, no memory writes, retire port `valid = 0`.
-- The register file is **not reset** (no reset on `x1–x31`, as the spec leaves them undefined). Programs must write a register before reading it. The startup code (§12) and the custom test env (`INIT_XREG`) zero all registers. Simulation is built with `--x-initial unique` and run with `+verilator+rand+reset+2 +verilator+seed+<n>`, so uninitialized registers get random values and reading one shows up as a lockstep mismatch. Without the runtime plusargs Verilator initializes them to zero, which would hide the bug.
+- The register file is **not reset** (no reset on `x1–x31`, as the spec leaves them undefined). Programs must write a register before reading it. The startup code (§12) and the custom test env (`INIT_XREG`) zero all registers. Simulation is built with `--x-initial unique` and run with `+verilator+rand+reset+2 +verilator+seed+<n>` (the harness defaults, seed 1), so uninitialized registers get random values and reading one shows up as a lockstep mismatch. Without the runtime plusargs Verilator initializes them to zero, which would hide the bug.
 
 ### 2.3 Memory map
 
@@ -677,7 +678,8 @@ If several conditions apply in one cycle, `status_o` records the highest-priorit
 | 2 | Timeout (`+max_cycles`, default 1,000,000) |
 | 3 | Core stopped with an error cause (§10) |
 | 4 | Core halted (ECALL/EBREAK) without writing `tohost` |
-| 5 | Harness error (missing file, bad plusarg) |
+| 5 | Harness error (missing or malformed file, bad plusarg) |
+| 6 | Simulation error: an RTL assertion, `$error`/`$stop`/`$fatal`, or a Verilator runtime error once the run has started |
 
 Negative tests (exec.md M3, the `e*` tests in §15.2) declare their expected exit code and cause in a header comment, e.g. `# expect: 3 STOP_ILLEGAL`. The runner checks it.
 

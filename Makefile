@@ -48,6 +48,39 @@ LINT_TOP        ?= rv_core
 LINT_FLAGS      := --lint-only -Wall --quiet $(if $(LINT_TOP),--top-module $(LINT_TOP),-Wno-MULTITOP)
 
 # ---------------------------------------------------------------------------
+# Verilator simulation (rv_soc_sim + sim/tb_top.cpp, spec §2.1)
+# ---------------------------------------------------------------------------
+SIM_FILELIST := $(ROOT)/sim/sim.f
+SIM_SRCS     := $(addprefix $(ROOT)/,$(shell sed -e 's://.*$$::' -e '/^[[:space:]]*$$/d' $(SIM_FILELIST)))
+SIM_HARNESS  := $(ROOT)/sim/tb_top.cpp
+SIM_DIR      := $(BUILD_DIR)/sim
+SIM_EXE      := $(SIM_DIR)/Vrv_soc_sim$(if $(filter Windows_NT,$(OS)),.exe)
+# --x-initial unique + the harness's default +verilator+rand+reset+2: state
+# without a reset (the register file) starts random (spec §2.2).
+# VL_USER_STOP/FATAL: tb_top.cpp maps $stop/$fatal/assertions to exit code 6.
+# PYTHON3: Verilator's makefile runs a Python helper, and "python3" may be
+# the Windows Store stub.
+# Waves: FST needs liblz4 (MSYS2 package mingw-w64-ucrt-x86_64-lz4, see
+# README). On Windows without it, fall back to VCD; Linux is assumed to have it.
+WAVE_FMT     ?= $(if $(filter Windows_NT,$(OS)),$(if $(wildcard $(MSYS2_UCRT64)/include/lz4.h),fst,vcd),fst)
+ifeq ($(WAVE_FMT),vcd)
+$(warning lz4.h not found in $(MSYS2_UCRT64)/include: building with VCD waves instead of FST. \
+  Install with: pacman -S mingw-w64-ucrt-x86_64-lz4)
+endif
+# RAM size, given to both the RTL (-G) and the harness's +hex= check (-D).
+MEM_SIZE_BYTES ?= 65536
+SIM_FLAGS    := --cc --exe --build -j 0 -Wall --quiet --top-module rv_soc_sim \
+                -GMEM_SIZE_BYTES=$(MEM_SIZE_BYTES) \
+                --timescale 1ns/1ns --assert --x-assign unique --x-initial unique --trace-$(WAVE_FMT) \
+                -CFLAGS "-O2 -DVL_USER_STOP -DVL_USER_FATAL -DMEM_SIZE_BYTES=$(MEM_SIZE_BYTES)" \
+                --MAKEFLAGS "PYTHON3=$(PYTHON)" \
+                --Mdir $(SIM_DIR) -o $(notdir $(SIM_EXE))
+# make sim HEX=... options
+MAX_CYCLES ?=
+SEED       ?=
+RETIRE_LOG ?= $(SIM_DIR)/retire.log
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 # $(call not_yet,<milestone>)
@@ -60,7 +93,7 @@ define need_prog
 @if [ -z "$(PROG)" ]; then echo "$@: set PROG=<path to program>, e.g. PROG=sw/asm/t00_lui_addi"; exit 2; fi
 endef
 
-.PHONY: help check-env lint unit sim spike compare riscv-tests riscof random regress syn clean
+.PHONY: help check-env lint unit sim-build sim-test sim spike compare riscv-tests riscof random regress syn clean
 
 help: ## List the targets
 	@echo "Usage: make <target> [VAR=value ...]"
@@ -82,9 +115,25 @@ endif
 unit: ## cocotb unit tests on Icarus: make unit [BLOCKS="rv_alu ..."] [WAVES=1]
 	$(PYTHON) $(ROOT)/tb/unit/run_unit.py $(BLOCKS) $(if $(WAVES),--waves)
 
-sim: ## Run one program on the RTL: make sim PROG=<path>
+$(SIM_EXE): $(RTL_SRCS) $(SIM_SRCS) $(SIM_HARNESS) $(RTL_FILELIST) $(SIM_FILELIST) $(ROOT)/Makefile
+	$(VERILATOR) $(SIM_FLAGS) $(RTL_SRCS) $(SIM_SRCS) $(SIM_HARNESS)
+
+sim-build: $(SIM_EXE) ## Build the Verilator simulator (build/sim/Vrv_soc_sim)
+
+sim-test: $(SIM_EXE) ## Check the Verilator harness against the Python model (M3.4)
+	$(PYTHON) $(ROOT)/tb/sim/test_tb_top.py $(SIM_EXE)
+
+# make sim HEX=<file> [TOHOST=<hex>] [MAX_CYCLES=<n>] [SEED=<n>] [WAVES=1] [RETIRE_LOG=<file>]
+# runs a ready-made image; PROG= (build from source first) arrives with M4.
+sim: ## Run one program on the RTL: make sim HEX=<file> [TOHOST=<hex addr>] (PROG=<path> from M4)
+ifneq ($(HEX),)
+	@$(MAKE) --no-print-directory sim-build
+	$(SIM_EXE) +hex=$(HEX) $(if $(TOHOST),+tohost=$(TOHOST)) $(if $(MAX_CYCLES),+max_cycles=$(MAX_CYCLES)) \
+	  +retire_log=$(RETIRE_LOG) $(if $(WAVES),+waves=$(SIM_DIR)/waves.$(WAVE_FMT)) $(if $(SEED),+verilator+seed+$(SEED))
+else
 	$(call need_prog)
-	$(call not_yet,M3/M4)
+	$(call not_yet,M4)
+endif
 
 spike: ## Run one program on Spike: make spike PROG=<path>
 	$(call need_prog)
@@ -103,8 +152,8 @@ riscof: ## Run riscv-arch-test rv32i_m/I through RISCOF
 random: ## Random program tests: make random SEEDS=<n>
 	$(call not_yet,M6.3-M6.4)
 
-regress: lint unit riscv-tests riscof random ## Full regression (filled in at M9.1)
-	@echo "regress: lint and unit are implemented; the other stages are placeholders"
+regress: lint unit sim-test riscv-tests riscof random ## Full regression (filled in at M9.1)
+	@echo "regress: lint, unit and sim-test are implemented; the other stages are placeholders"
 
 syn: ## Yosys synthesis of rv_core
 	$(call not_yet,M8)

@@ -49,9 +49,9 @@ Steps:
 2. Open the **MSYS2 UCRT64** shell from the Start menu and install the hardware tools:
    ```bash
    pacman -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-verilator \
-       mingw-w64-ucrt-x86_64-yosys mingw-w64-ucrt-x86_64-iverilog mingw-w64-ucrt-x86_64-gtkwave
+       mingw-w64-ucrt-x86_64-yosys mingw-w64-ucrt-x86_64-iverilog mingw-w64-ucrt-x86_64-gtkwave \n       mingw-w64-ucrt-x86_64-lz4
    ```
-   Also install `mingw-w64-ucrt-x86_64-perl`. Then add `C:\msys64\ucrt64\bin` to your user `PATH`. Add only that folder, **not** `C:\msys64\usr\bin`, which would clash with Git Bash.
+   `lz4` is what Verilator needs for FST waveforms; without it `make sim-build` falls back to VCD and prints a warning. Also install `mingw-w64-ucrt-x86_64-perl`. Then add `C:\msys64\ucrt64\bin` to your user `PATH`. Add only that folder, **not** `C:\msys64\usr\bin`, which would clash with Git Bash.
 
    MSYS2's `verilator` command is a Perl launcher script that fails under Git Bash's own Perl. The Makefile and `check_env.sh` therefore call `C:/msys64/ucrt64/bin/verilator_bin.exe` directly with `VERILATOR_ROOT` set. To run Verilator by hand in Git Bash, do the same:
    ```bash
@@ -87,7 +87,10 @@ Run `make help` for the current list. Targets marked *not implemented* print the
 | `make check-env` | M0 | Check tool versions |
 | `make lint` | M0 | Verilator `-Wall` lint of the sources in `rtl/rtl.f` |
 | `make unit` | M2 | cocotb unit tests |
-| `make sim PROG=...` | M3/M4 | Run one program on the RTL |
+| `make sim-build` | M3 | Build the Verilator simulator `build/sim/Vrv_soc_sim` (rv_soc_sim + `sim/tb_top.cpp`) |
+| `make sim-test` | M3 | Check the simulator against the Python model: every SoC scenario, exit codes, retire log, waves, random reset |
+| `make sim HEX=... [TOHOST=addr]` | M3 | Run a ready-made `$readmemh` image (`MAX_CYCLES=`, `SEED=`, `WAVES=1`, `RETIRE_LOG=`) |
+| `make sim PROG=...` | M4 | Build one program from source and run it on the RTL |
 | `make spike PROG=...` | M6 | Run one program on Spike |
 | `make compare PROG=...` | M6 | RTL vs. Spike lockstep comparison |
 | `make riscv-tests` | M5 | `rv32ui-p-*` suite |
