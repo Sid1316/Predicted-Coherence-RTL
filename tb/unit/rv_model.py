@@ -53,3 +53,81 @@ def alu_ref(op_name: str, a: int, b: int) -> int:
     if op_name == "ALU_AND":
         return a & b
     raise ValueError(f"unknown ALU op {op_name}")
+
+
+# ---------------------------------------------------------------------------
+# Immediates (spec §4.1)
+# ---------------------------------------------------------------------------
+
+# imm_type_t, in declaration order (spec §8.2)
+IMM_TYPES = {
+    "IMM_NONE": 0,
+    "IMM_I": 1,
+    "IMM_S": 2,
+    "IMM_B": 3,
+    "IMM_U": 4,
+    "IMM_J": 5,
+}
+
+# Where each immediate bit sits in the instruction word, written the way the
+# ISA manual draws the formats: (imm_hi, imm_lo, inst_hi, inst_lo) means
+# imm[imm_hi:imm_lo] is stored in inst[inst_hi:inst_lo].
+# Immediate bits not listed are zero (B/J bit 0, U bits 11:0) or a copy of
+# the sign bit (the top bit of the format).
+IMM_FIELDS = {
+    "IMM_I": [(11, 0, 31, 20)],
+    "IMM_S": [(11, 5, 31, 25), (4, 0, 11, 7)],
+    "IMM_B": [(12, 12, 31, 31), (10, 5, 30, 25), (4, 1, 11, 8), (11, 11, 7, 7)],
+    "IMM_U": [(31, 12, 31, 12)],
+    "IMM_J": [(20, 20, 31, 31), (10, 1, 30, 21), (11, 11, 20, 20), (19, 12, 19, 12)],
+}
+
+# Width of the immediate before sign extension, and its lowest stored bit.
+IMM_WIDTH = {"IMM_I": 12, "IMM_S": 12, "IMM_B": 13, "IMM_U": 32, "IMM_J": 21}
+IMM_ALIGN = {"IMM_I": 0, "IMM_S": 0, "IMM_B": 1, "IMM_U": 12, "IMM_J": 1}
+
+
+def _bits(value: int, hi: int, lo: int) -> int:
+    return (value >> lo) & ((1 << (hi - lo + 1)) - 1)
+
+
+def sext(value: int, width: int) -> int:
+    """Sign-extend a width-bit value to 32 bits (result is unsigned 32-bit)."""
+    value &= (1 << width) - 1
+    if value & (1 << (width - 1)):
+        value -= 1 << width
+    return value & MASK32
+
+
+def imm_decode(type_name: str, inst: int) -> int:
+    """Immediate the decoder should produce for this instruction word."""
+    if type_name not in IMM_FIELDS:  # IMM_NONE and unused encodings
+        return 0
+    imm = 0
+    for imm_hi, imm_lo, inst_hi, inst_lo in IMM_FIELDS[type_name]:
+        imm |= _bits(inst, inst_hi, inst_lo) << imm_lo
+    return sext(imm, IMM_WIDTH[type_name])
+
+
+def imm_encode(type_name: str, imm: int, other_bits: int = 0) -> int:
+    """Instruction word holding imm in its immediate fields.
+
+    other_bits fills every bit that is not part of the immediate (opcode,
+    registers, funct3), so tests can check those bits are ignored.
+    """
+    inst = 0
+    used = 0
+    for imm_hi, imm_lo, inst_hi, inst_lo in IMM_FIELDS[type_name]:
+        width = imm_hi - imm_lo + 1
+        inst |= _bits(imm, imm_hi, imm_lo) << inst_lo
+        used |= ((1 << width) - 1) << inst_lo
+    return (inst | (other_bits & ~used)) & MASK32
+
+
+def imm_range(type_name: str) -> tuple[int, int, int]:
+    """(min, max, step) of the signed immediate values a format can hold."""
+    width = IMM_WIDTH[type_name]
+    step = 1 << IMM_ALIGN[type_name]
+    if type_name == "IMM_U":
+        return (-(1 << 31), (1 << 31) - step, step)
+    return (-(1 << (width - 1)), (1 << (width - 1)) - step, step)

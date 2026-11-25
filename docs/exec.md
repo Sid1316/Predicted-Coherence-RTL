@@ -146,7 +146,7 @@ All four items are drafted in [spec.md](spec.md); this milestone is reviewing th
 Each block gets a cocotb test in `tb/unit/test_<block>.py`, with randomized checks against a Python reference (`tb/unit/rv_model.py`) where that makes sense. Tests run on Icarus Verilog through `tb/unit/run_unit.py` (`make unit`); Verilator stays the lint tool. Each test suite is checked by injecting a bug and confirming it fails.
 
 - [x] **M2.1** `rv_alu`: ADD, SUB, SLL, SLT, SLTU, XOR, SRL, SRA, OR, AND. Test shift amounts 0/31, signed edge cases (`0x8000_0000`, `-1`), random vectors vs. Python.
-- [ ] **M2.2** `rv_imm_gen`: I/S/B/U/J formats. Check sign extension and bit scrambling for B/J with random instruction words.
+- [x] **M2.2** `rv_imm_gen`: I/S/B/U/J formats. Check sign extension and bit scrambling for B/J with random instruction words.
 - [ ] **M2.3** `rv_regfile`: x0 stays 0 after writes, read-after-write timing, all 31 registers written and read back.
 - [ ] **M2.4** `rv_branch_unit`: BEQ/BNE/BLT/BGE/BLTU/BGEU, signed vs. unsigned edge cases.
 - [ ] **M2.5** `rv_lsu`: LB/LH/LW/LBU/LHU sign/zero extension at every byte offset; SB/SH/SW byte enables and data lane placement; misalignment detection.

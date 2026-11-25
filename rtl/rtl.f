@@ -6,7 +6,7 @@
 rtl/rv_pkg.sv
 // rtl/rv_pc.sv
 // rtl/rv_decoder.sv
-// rtl/rv_imm_gen.sv
+rtl/rv_imm_gen.sv
 // rtl/rv_regfile.sv
 rtl/rv_alu.sv
 // rtl/rv_branch_unit.sv

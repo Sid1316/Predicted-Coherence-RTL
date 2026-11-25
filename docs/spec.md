@@ -744,6 +744,8 @@ Verilator is a 2-state simulator, so X-propagation checks need a 4-state simulat
 ### 14.4 Lint and formatting
 - `verilator --lint-only -Wall` must report zero warnings. Waivers use `/* verilator lint_off <RULE> */` around the smallest possible region, with a comment saying why.
 - Current waivers: `UNUSEDPARAM` around the constants in `rv_pkg.sv` (§8.1).
+- Bits a module deliberately ignores (e.g. the opcode field in `rv_imm_gen`) are XOR-reduced into a signal whose name contains `unused` (`logic unused_opcode; assign unused_opcode = ^inst_i[6:0];`). Verilator exempts such names from `UNUSED` warnings, so no `lint_off` is needed and any *other* unused bit is still reported.
+- Until `rv_core` exists (M3.2), `make lint` passes `-Wno-MULTITOP` so each block is checked as its own top module. This only silences the "several top-level modules" notice; every module is still fully linted. Once `LINT_TOP=rv_core` is set, the flag is dropped.
 - Format with `verible-verilog-format` (if installed) using the repo's `.verible-format` settings; 2-space indent, 100-column lines.
 
 ### 14.5 Commits

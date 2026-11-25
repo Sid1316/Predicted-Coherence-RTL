@@ -28,6 +28,7 @@ BUILD = ROOT / "build" / "unit"
 # Add one entry per block as M2 progresses.
 BLOCKS = {
     "rv_alu": ["rv_pkg.sv", "rv_alu.sv"],
+    "rv_imm_gen": ["rv_pkg.sv", "rv_imm_gen.sv"],
 }
 
 

@@ -41,9 +41,11 @@ export RISCV_PREFIX PYTHON VERILATOR
 RTL_FILELIST := $(ROOT)/rtl/rtl.f
 RTL_SRCS     := $(addprefix $(ROOT)/,$(shell sed -e 's://.*$$::' -e '/^[[:space:]]*$$/d' $(RTL_FILELIST)))
 
-# Set to rv_core once it exists (M3.2); until then Verilator picks the top itself.
+# Set to rv_core once it exists (M3.2). Until then the blocks are independent,
+# so every module is linted as its own top: -Wno-MULTITOP only silences the
+# "several top-level modules" notice, every module is still fully checked.
 LINT_TOP        ?=
-LINT_FLAGS      := --lint-only -Wall --quiet $(if $(LINT_TOP),--top-module $(LINT_TOP))
+LINT_FLAGS      := --lint-only -Wall --quiet $(if $(LINT_TOP),--top-module $(LINT_TOP),-Wno-MULTITOP)
 
 # ---------------------------------------------------------------------------
 # Helpers
