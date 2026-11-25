@@ -132,13 +132,15 @@ Effort: **S** = hours, **M** = 1–3 days, **L** = 3+ days. Order follows the de
 **Exit criteria:** `check_env.sh` passes; `make lint` runs on an empty RTL file list without errors.
 
 ### M1: Specification (S–M)
-All four items are drafted in [spec.md](spec.md); this milestone is reviewing them and turning §8 into code.
-- [ ] **M1.1** Review the single-cycle datapath block diagram, next-PC mux, writeback mux and control signal table (spec.md §5–§7).
-- [ ] **M1.2** Write `rtl/rv_pkg.sv` from spec.md §8: opcodes, `alu_op_t`, `imm_type_t`, `wb_sel_t`, `ctrl_t`, memory request/response structs, retire/status types, memory map constants.
-- [ ] **M1.3** Review the coding and naming conventions (spec.md §14).
-- [ ] **M1.4** Review the instruction coverage checklist (spec.md §15) and confirm the upstream test names against the submodule checkouts from M0.4.
+All four items are drafted in [spec.md](spec.md); this milestone is reviewing them and turning §8 into code. Review results and the changes they caused are recorded in spec.md §0.
+- [x] **M1.1** Review the single-cycle datapath block diagram, next-PC mux, writeback mux and control signal table (spec.md §5–§7).
+- [x] **M1.2** Write `rtl/rv_pkg.sv` from spec.md §8: opcodes, `alu_op_t`, `imm_type_t`, `wb_sel_t`, `ctrl_t`, memory request/response structs, retire/status types, memory map constants.
+- [x] **M1.3** Review the coding and naming conventions (spec.md §14).
+- [x] **M1.4** Review the instruction coverage checklist (spec.md §15) and confirm the upstream test names against the submodule checkouts from M0.4.
 
 **Exit criteria:** spec.md reviewed and marked approved; `rv_pkg.sv` compiles and passes lint.
+
+**Status: done (2026-11-25).** spec.md rev 1.1 approved; `rtl/rv_pkg.sv` is in `rtl/rtl.f` and `make lint` is clean.
 
 ### M2: Datapath blocks and unit tests (M–L)
 Each block gets a cocotb test, with randomized checks against a Python reference where that makes sense.

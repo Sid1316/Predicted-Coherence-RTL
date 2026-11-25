@@ -5,7 +5,7 @@
 | **Covers** | Phase 1: single-cycle RV32I core + simulation SoC |
 | **Companion** | [exec.md](exec.md) (execution plan, milestones, Phase 2 decision inputs) |
 | **ISA reference** | *The RISC-V Instruction Set Manual, Volume I: Unprivileged ISA* (ratified), RV32I Base Integer Instruction Set v2.1 |
-| **Status** | Draft for M1 review |
+| **Status** | Rev 1.1: approved, M1 complete (2026-11-25). See §0. |
 
 This document is the single source of truth for Phase 1 RTL, simulation and software. It covers the items listed under milestone M1 in exec.md:
 
@@ -17,6 +17,33 @@ This document is the single source of truth for Phase 1 RTL, simulation and soft
 | M1.4 Instruction coverage checklist | §15 |
 
 Anything this document does not specify is out of Phase 1 scope (see exec.md §1). Phase 2 choices are listed as **hooks** in §16 but not decided.
+
+---
+
+## 0. M1 review record
+
+The review was done on 2026-11-25 against the pinned submodules (`tests/riscv-tests` at `1b3f8bd`, `tests/riscv-arch-test` at tag `3.10.0`) and the installed tools (Verilator 5.054). "Changed" means this revision of the document was edited.
+
+### 0.1 Result per M1 item
+
+| Item | What was checked | Result |
+|---|---|---|
+| **M1.1** Datapath, next-PC, writeback, control table | Every row of §7 against §4 and §5; every signal path in §5 for combinational loops; stop handling in §10 against §5.2/§5.3 | One defect found and fixed (R-1). Table unchanged. |
+| **M1.2** `rv_pkg.sv` contents | §8 code extracted as-is and linted with `verilator --lint-only -Wall` (alone, and imported by a test module that uses every type and constant) | Compiles; clean when imported. Linted alone, every constant is flagged `UNUSEDPARAM`, so a documented waiver was added (R-2). `ctrl_t` is 28 bits. **`rtl/rv_pkg.sv` is generated from §8 word for word, listed in `rtl/rtl.f`, and passes `make lint`.** |
+| **M1.3** Conventions | §14 against the Makefile and lint setup | Unchanged, plus the one waiver allowed by §14.4 (R-2). |
+| **M1.4** Coverage checklist | Every test name in §15 against `isa/rv32ui/*.S` and `riscv-test-suite/rv32i_m/I/src/*.S`; what each suite needs from our test environment | All names exist. One arch-test was missing from the table (R-5). Environment requirements were missing or wrong (R-3, R-4). |
+
+### 0.2 Changes in this revision
+
+| ID | Section | Finding | Change |
+|---|---|---|---|
+| R-1 | §6.8 | `rv_lsu.enable_i` was "0 when halted or stopping". Stopping includes `STOP_BUS_ERROR`, which comes from `dmem_rsp.err`, which depends on `dmem_req.valid`: a **combinational loop**. | `enable_i` now depends only on `halted_q` and the fetch error, never on the data response. |
+| R-2 | §8.1, §14.4 | Package constants trip `UNUSEDPARAM` when `rv_pkg.sv` is linted on its own, which is the case until other modules exist. | `lint_off`/`lint_on UNUSEDPARAM` around the constants, with the reason in a comment. |
+| R-3 | §11, §12 | §11 said the linker script defines `tohost`/`fromhost`. Both test suites define these symbols in their own macros (`RVTEST_DATA_BEGIN`, `RVMODEL_DATA_BEGIN`), so a linker-script definition would clash. | The symbols come from assembly (test env, `model_test.h`, or `crt0.S`); `link.ld` only places the `.tohost` section. |
+| R-4 | §12 | The custom riscv-tests env was underspecified. `RVTEST_CODE_END` is `unimp` (illegal on this core). `TEST_PASSFAIL` places `RVTEST_FAIL` directly before `RVTEST_PASS`, so FAIL must not fall through. | Full macro list and required behaviour added, plus the arch-test entry point, signature dump and trap-handler finding. |
+| R-5 | §15.1 | `misalign1-jalr-01` (JALR with target bit 0 set, which must be cleared, so no trap) was not listed. | Added to the JALR row, and the bit-0 case added to directed test `e04`. "(if present)" removed, since `ld_st` and `st_ld` exist and use only aligned RV32 accesses. Suite totals added. |
+| R-6 | §2.2 | Verilator's `--x-initial unique` alone gives **zeros** unless the run also asks for random values. | Added the runtime plusargs. |
+| R-7 | §3.1 | The build flow assumes Spike, which has no native Windows build. | Note added; the reference model is an open decision (exec.md §8). |
 
 ---
 
@@ -77,7 +104,7 @@ Anything this document does not specify is out of Phase 1 scope (see exec.md §1
 - **One clock**, `clk`. Every flop in the design is on its rising edge.
 - **Reset** `rst`: synchronous, active-high, held for at least 2 cycles by the harness.
 - During reset: `pc_q ← RESET_PC`, `halted_q ← 0`, retire counter ← 0, no memory writes, retire port `valid = 0`.
-- The register file is **not reset** (no reset on `x1–x31`, as the spec leaves them undefined). Programs must write a register before reading it. The startup code (§12) and the custom test env (`INIT_XREG`) zero all registers. Simulation runs with `--x-initial unique` so that reading an uninitialized register shows up as a lockstep mismatch.
+- The register file is **not reset** (no reset on `x1–x31`, as the spec leaves them undefined). Programs must write a register before reading it. The startup code (§12) and the custom test env (`INIT_XREG`) zero all registers. Simulation is built with `--x-initial unique` and run with `+verilator+rand+reset+2 +verilator+seed+<n>`, so uninitialized registers get random values and reading one shows up as a lockstep mismatch. Without the runtime plusargs Verilator initializes them to zero, which would hide the bug.
 
 ### 2.3 Memory map
 
@@ -122,6 +149,8 @@ Instruction fetch is only legal from RAM. A fetch outside RAM sets the error fla
                                              ▼
                                    PASS / first mismatch report
 ```
+
+**Reference model (open):** Spike has no native Windows build, and this project runs natively on Windows (README Setup). The Spike branch of this flow stands for "the reference model". Which model fills it (a project Python RV32I model, Sail, or Spike on a Linux CI runner) is the open decision in exec.md §8, needed before M5.3. The retire-log format (§9.2) stays the comparison interface whichever model is chosen.
 
 ### 3.2 Make targets
 
@@ -365,7 +394,7 @@ A read and a write to the same register in the same cycle returns the **old** va
 | `ctrl_i` | in | `mem_read`, `mem_write`, `mem_size`, `mem_unsigned` from `ctrl_t` |
 | `addr_i` | in | `alu_res` |
 | `store_data_i` | in | `rs2` value |
-| `enable_i` | in | 0 when halted or stopping, so nothing happens on the memory side |
+| `enable_i` | in | `~halted_q & ~imem_rsp.err`. Must **not** depend on `dmem_rsp` or on any stop cause derived from it (that would be a combinational loop through the memory). Other stop causes need no gating here: illegal instructions already decode to `mem_read = mem_write = 0`, ECALL/EBREAK/jumps never access memory, and the LSU drops `valid` itself on misalignment. |
 | `dmem_req_o` | out | `dmem_req_t` (lane-placed data, byte enables) |
 | `dmem_rsp_i` | in | `dmem_rsp_t` |
 | `load_data_o` | out | Extended load result |
@@ -437,6 +466,10 @@ The decoder unit test (exec.md M2.6) generates its expected values from this tab
 ### 8.1 Constants
 ```systemverilog
 package rv_pkg;
+  // Constants are used by the modules that import this package. Verilator
+  // flags them as unused when the package is linted on its own (M1), so the
+  // warning is waived for this block only (§14.4).
+  /* verilator lint_off UNUSEDPARAM */
   // Opcodes (inst[6:0])
   localparam logic [6:0] OPC_LUI    = 7'b0110111;
   localparam logic [6:0] OPC_AUIPC  = 7'b0010111;
@@ -453,6 +486,7 @@ package rv_pkg;
   // Memory map
   localparam logic [31:0] MEM_BASE     = 32'h8000_0000;
   localparam logic [31:0] CONSOLE_ADDR = 32'h1000_0000;
+  /* verilator lint_on UNUSEDPARAM */
 ```
 
 ### 8.2 Enums and control struct
@@ -493,7 +527,7 @@ package rv_pkg;
     logic       is_ecall;
     logic       is_ebreak;
     logic       illegal;
-  } ctrl_t;
+  } ctrl_t;   // 28 bits
 ```
 
 ### 8.3 Memory port structs
@@ -613,11 +647,12 @@ If several conditions apply in one cycle, `status_o` records the highest-priorit
 
 ## 11. Test-end protocol (HTIF-compatible)
 
-- The linker script defines 8-byte-aligned symbols `tohost` and `fromhost` in section `.tohost`. Spike uses these to end a simulation, so the same ELF runs on both.
+- Every program has 8-byte symbols `tohost` and `fromhost` in section `.tohost`. They are defined **in assembly**, not in the linker script: by `RVTEST_DATA_BEGIN` (riscv-tests), `RVMODEL_DATA_BEGIN` (arch-test `model_test.h`), or `crt0.S` (C programs). `link.ld` only places the `.tohost` section; defining the symbols there as well would clash. Spike's HTIF uses the same symbols, so one ELF runs on both.
 - A program ends by storing a word to `tohost`:
   - `1` → **pass** (exit code 0)
   - `(code << 1) | 1` → **fail** with `code` (for riscv-tests, `code` = failing test number)
 - The harness gets the `tohost` address from `nm` via `+tohost=`. It ends the run in the cycle the store retires.
+- For RISCOF, the harness also takes `+signature=<file> +sig_begin=<addr> +sig_end=<addr>` (addresses of `begin_signature`/`end_signature` from `nm`). At the end of the run it writes the words in `[sig_begin, sig_end)` to the file, one 32-bit word per line as 8 lower-case hex digits, which is the format RISCOF compares.
 
 **Harness exit codes**
 
@@ -641,10 +676,24 @@ Negative tests (exec.md M3, the `e*` tests in §15.2) declare their expected exi
 | ISA / ABI | `-march=rv32i -mabi=ilp32` |
 | Compiler flags | `-O2 -nostdlib -nostartfiles -ffreestanding -static -mcmodel=medany` |
 | Libraries | `libgcc` (software `mul`/`div`/`rem`), project stubs: `putchar`, minimal `printf`, `memcpy`, `memset` |
-| Linker script `link.ld` | `.text` at `0x8000_0000` (entry `_start`), then `.rodata`, `.data`, `.bss`, `.tohost`; `_stack_top` = end of RAM, 16-byte aligned |
-| `crt0.S` | Zero `x1–x31`; set `sp = _stack_top`, `gp = __global_pointer$`; zero `.bss`; call `main`; store `(ret << 1) \| 1` to `tohost` (so `ret = 0` → pass); `ecall` as a fallback stop |
-| Custom riscv-tests env (`sw/common/env/p/riscv_test.h`) | `RVTEST_RV32U`; `RVTEST_CODE_BEGIN` = `_start:` + `INIT_XREG`; `RVTEST_PASS` = store `1` to `tohost`; `RVTEST_FAIL` = store `(TESTNUM << 1) \| 1`; no CSR access |
-| RISCOF `model_test.h` | `RVMODEL_HALT` = pass write to `tohost` + `ecall`; `RVMODEL_DATA_BEGIN/END` mark the signature region; `RVMODEL_BOOT` empty; IO macros empty |
+| Linker script `link.ld` | `.text.init` first at `0x8000_0000` (both test suites put their entry code there), then `.text`, `.rodata`, `.data`, `.bss`, `.tohost`; `_stack_top` = end of RAM, 16-byte aligned. Places `.tohost` but defines no `tohost`/`fromhost` symbols (§11). |
+| `crt0.S` | In `.text.init`: zero `x1–x31`; set `sp = _stack_top`, `gp = __global_pointer$`; zero `.bss`; call `main`; store `(ret << 1) \| 1` to `tohost` (so `ret = 0` → pass); `ecall` as a fallback stop. Defines `tohost`/`fromhost` in `.tohost`. |
+| RISCOF `model_test.h` | Start from `riscof-plugins/rv32/spike_simple/env/model_test.h` in the pinned arch-test. `RVMODEL_DATA_BEGIN` defines `tohost`/`fromhost` in `.tohost` and the `begin_signature` label; `RVMODEL_DATA_END` defines `end_signature`; `RVMODEL_HALT` stores `1` to `tohost` (the run ends there); `RVMODEL_BOOT` and the IO macros are empty. The entry label is `rvtest_entry_point`, in `.text.init`. Must **not** define `rvtest_mtrap_routine` (see below). |
+
+**Custom riscv-tests env** (`sw/common/env/p/riscv_test.h`). The `rv32ui` tests include `riscv_test.h` and `isa/macros/scalar/test_macros.h`, and use exactly these macros:
+
+| Macro | Required behaviour on this core |
+|---|---|
+| `RVTEST_RV32U` | Empty marker (the `rv32ui/*.S` wrappers redefine `RVTEST_RV64U` to it) |
+| `RVTEST_CODE_BEGIN` | `.section .text.init`, `.globl _start`, `_start:`, then `INIT_XREG` (zero `x1–x31`). No CSR access, no trap vector. |
+| `RVTEST_CODE_END` | `unimp`, as upstream. It is never reached because PASS and FAIL stop the test; if it is reached, the core stops with `STOP_ILLEGAL` and the test fails (exit 3), which is the right result. |
+| `TESTNUM` | `gp` (as upstream) |
+| `RVTEST_PASS` | `fence; li TESTNUM, 1; sw TESTNUM, tohost, t5; ecall` |
+| `RVTEST_FAIL` | `fence; 1: beqz TESTNUM, 1b; sll TESTNUM, TESTNUM, 1; or TESTNUM, TESTNUM, 1; sw TESTNUM, tohost, t5; ecall`. `TEST_PASSFAIL` places FAIL directly before PASS, so FAIL must end the test and never fall through into PASS. |
+| `RVTEST_DATA_BEGIN` | As upstream: defines `tohost`/`fromhost` (`.dword`, `.align 6`) in `.tohost`, then `begin_signature` |
+| `RVTEST_DATA_END` | As upstream: `end_signature` |
+
+**Arch-test trap handler:** in arch-test 3.10.0, `RVTEST_CODE_BEGIN`/`RVTEST_CODE_END` install and remove a CSR-based trap handler (`mtvec`, `mscratch`, …) only when `rvtest_mtrap_routine` is defined. None of the `rv32i_m/I` tests define it, so these tests run without CSRs, as long as our `model_test.h` doesn't define it either.
 
 ---
 
@@ -694,6 +743,7 @@ Verilator is a 2-state simulator, so X-propagation checks (no X on `ctrl_o`, `ne
 
 ### 14.4 Lint and formatting
 - `verilator --lint-only -Wall` must report zero warnings. Waivers use `/* verilator lint_off <RULE> */` around the smallest possible region, with a comment saying why.
+- Current waivers: `UNUSEDPARAM` around the constants in `rv_pkg.sv` (§8.1).
 - Format with `verible-verilog-format` (if installed) using the repo's `.verible-format` settings; 2-space indent, 100-column lines.
 
 ### 14.5 Commits
@@ -704,7 +754,7 @@ Verilator is a 2-state simulator, so X-propagation checks (no X on `ctrl_o`, `ne
 
 ## 15. Instruction coverage checklist
 
-Each instruction must be covered by **all three** sources before Phase 1 is done (exec.md §7). Test names follow the upstream repositories; check them against the pinned submodule versions in M0.4.
+Each instruction must be covered by **all three** sources before Phase 1 is done (exec.md §7). Every upstream name below was checked in M1 against the pinned submodules (§0): riscv-tests sources are `tests/riscv-tests/isa/rv32ui/<name>.S`, arch-tests are `tests/riscv-arch-test/riscv-test-suite/rv32i_m/I/src/<name>.S`. If a submodule pin moves, re-check this table.
 
 ### 15.1 Per instruction
 
@@ -713,7 +763,7 @@ Each instruction must be covered by **all three** sources before Phase 1 is done
 | LUI | `t00_lui_addi` | `lui` | `lui-01` | [ ] |
 | AUIPC | `t07_auipc` | `auipc` | `auipc-01` | [ ] |
 | JAL | `t05_jal_jalr` | `jal` | `jal-01` | [ ] |
-| JALR | `t05_jal_jalr` | `jalr` | `jalr-01` | [ ] |
+| JALR | `t05_jal_jalr` | `jalr` | `jalr-01`, `misalign1-jalr-01` | [ ] |
 | BEQ | `t04_branch` | `beq` | `beq-01` | [ ] |
 | BNE | `t04_branch` | `bne` | `bne-01` | [ ] |
 | BLT | `t04_branch` | `blt` | `blt-01` | [ ] |
@@ -753,7 +803,9 @@ Each instruction must be covered by **all three** sources before Phase 1 is done
 
 For ECALL and EBREAK, the directed tests plus random-test coverage of the halt path are the full coverage in Phase 1. Upstream coverage arrives with Zicsr in Phase 2.
 
-Additional upstream tests that run but aren't tied to one instruction: `rv32ui-p-simple`, `rv32ui-p-ld_st`, `rv32ui-p-st_ld` (if present in the pinned version). Waived: `rv32ui-p-fence_i`, `rv32ui-p-ma_data`.
+Suite totals at the pinned versions:
+- **riscv-tests `rv32ui`:** 42 tests, of which 40 run. The rows above, plus `simple`, `ld_st` and `st_ld`, which aren't tied to one instruction. `ld_st`/`st_ld` use only aligned accesses on RV32; their 64-bit parts are compiled out. Waived: `fence_i` (Zifencei) and `ma_data` (misaligned loads such as `lw` at offset 1, which this core treats as an error).
+- **riscv-arch-test `rv32i_m/I`:** 39 tests, all run, all listed above.
 
 ### 15.2 Directed tests list (`sw/asm/`)
 
@@ -773,7 +825,7 @@ Additional upstream tests that run but aren't tied to one instruction: `rv32ui-p
 | `e01_illegal` | All-zero word, a CSR instruction, a bad funct7, an `M`-extension op | exit 3, `STOP_ILLEGAL` |
 | `e02_misaligned_load` | `LW` at offset 2, `LH` at offset 1 | exit 3, `STOP_MISALIGNED_DATA` |
 | `e03_misaligned_store` | `SW` at offset 1 | exit 3, `STOP_MISALIGNED_DATA` |
-| `e04_misaligned_jump` | `JALR` to an address with bit 1 set; a not-taken branch to a misaligned target must **not** stop | exit 3, `STOP_MISALIGNED_FETCH` |
+| `e04_misaligned_jump` | `JALR` to an address with bit 1 set; a not-taken branch to a misaligned target, and a `JALR` whose target has only bit 0 set, must **not** stop | exit 3, `STOP_MISALIGNED_FETCH` |
 | `e05_bus_error` | Load from `0x0000_0000` | exit 3, `STOP_BUS_ERROR` |
 | `e06_ifetch_error` | JALR to an address outside RAM | exit 3, `STOP_IFETCH_ERROR` |
 | `t11_console` | Write a string to `CONSOLE` | pass; harness output matches the expected string |
