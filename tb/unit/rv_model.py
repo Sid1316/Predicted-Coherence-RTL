@@ -656,3 +656,63 @@ class CoreModel:
         self.halted = True
         self.status = STOP_CAUSES[cause]
         return r
+
+
+# ---------------------------------------------------------------------------
+# Retire log and memory image formats (spec §9.2, §6.9)
+# ---------------------------------------------------------------------------
+
+def retire_log_line(r: dict[str, int], status: int) -> str:
+    """One spec §9.2 retire-log line for retire fields `r`; `status` is the
+    stop_cause_t value latched by this instruction (used for HALT/TRAP)."""
+    s = f"{r['order'] & MASK32:08x} {r['pc_rdata']:08x} {r['insn']:08x}"
+    if r["rd_addr"]:
+        s += f" x{r['rd_addr']} {r['rd_wdata']:08x}"
+    if r["mem_wmask"]:
+        s += f" mem W {r['mem_addr']:08x} {r['mem_wmask']:x} {r['mem_wdata']:08x}"
+    if r["mem_rmask"]:
+        s += f" mem R {r['mem_addr']:08x} {r['mem_rmask']:x} {r['mem_rdata']:08x}"
+    if r["halt"] or r["trap"]:
+        cause = next(k for k, v in STOP_CAUSES.items() if v == status)
+        s += f" {'HALT' if r['halt'] else 'TRAP'} {cause[len('STOP_'):]}"
+    return s
+
+
+def write_hex(image: dict[int, int], path, per_line: int = 4) -> None:
+    """Write a word image {byte address: word} in the rv_mem_model $readmemh
+    format: `@<word index from MEM_BASE>` before each run of consecutive
+    words, upper-case hex, as objcopy -O verilog --verilog-data-width=4 does."""
+    lines = []
+    prev = None
+    run: list[str] = []
+
+    def flush():
+        for i in range(0, len(run), per_line):
+            lines.append(" ".join(run[i:i + per_line]))
+
+    for addr in sorted(image):
+        assert addr % 4 == 0 and SimMemory.in_ram(addr), f"bad image address {addr:#x}"
+        idx = (addr - MEM_BASE) // 4
+        if idx != (None if prev is None else prev + 1):
+            flush()
+            run = []
+            lines.append(f"@{idx:08X}")
+        run.append(f"{image[addr] & MASK32:08X}")
+        prev = idx
+    flush()
+    Path(path).write_text("\n".join(lines) + "\n", encoding="ascii")
+
+
+def read_hex(path) -> dict[int, int]:
+    """Parse a word-wide $readmemh file (the subset write_hex and objcopy
+    produce: @ addresses, hex words, // comments) into {byte address: word}."""
+    image = {}
+    idx = 0
+    for line in Path(path).read_text(encoding="ascii").splitlines():
+        for tok in line.split("//")[0].split():
+            if tok.startswith("@"):
+                idx = int(tok[1:], 16)
+            else:
+                image[MEM_BASE + 4 * idx] = int(tok, 16)
+                idx += 1
+    return image
