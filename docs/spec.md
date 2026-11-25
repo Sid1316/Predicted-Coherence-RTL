@@ -45,6 +45,7 @@ The review was done on 2026-11-25 against the pinned submodules (`tests/riscv-te
 | R-6 | §2.2 | Verilator's `--x-initial unique` alone gives **zeros** unless the run also asks for random values. | Added the runtime plusargs. |
 | R-7 | §3.1 | The build flow assumes Spike, which has no native Windows build. | Note added; the reference model is an open decision (exec.md §8). |
 | R-8 | §6.2 | exec.md M3.1 has `rv_pc` choose the next PC and detect misaligned targets, but §6.2 gave it only a `next_pc_i` input, leaving §5.2 in `rv_core` where it could not be unit-tested. | `rv_pc` now holds all of §5.2: new inputs for the control bits, branch result and target, new outputs `next_pc_o` and `misaligned_fetch_o`. Behaviour unchanged. |
+| R-9 | §6.1, §6.8, §9.1, §14.3, §14.4 | Writing `rv_core` (M3.2) needed four details the spec left open: what the datapath sees on a fetch error; whether `rv_lsu.enable_i` blocks a store during reset (§2.2 says no memory writes in reset, but §6.8 gated only on `halted_q` and the fetch error); which retire fields an instruction that reads no register, or that stops, reports; and how simulation-only assertions are written. | On a fetch error (and while idle) the instruction word is forced to 0, so the untrusted word never reaches the datapath, and the retire port shows `insn = 0`. `enable_i` also includes `~rst_i`. `rs1_*`/`rs2_*` are 0 for an operand the instruction does not read (as in RVFI); the `mem_*` fields are 0 for a stopping instruction. Assertion blocks use a plain `always @(posedge clk_i)` under `` `ifndef SYNTHESIS ``. `make lint` now lints with `--top-module rv_core`. |
 
 ---
 
@@ -407,7 +408,7 @@ A read and a write to the same register in the same cycle returns the **old** va
 | `ctrl_i` | in | `mem_read`, `mem_write`, `mem_size`, `mem_unsigned` from `ctrl_t` |
 | `addr_i` | in | `alu_res` |
 | `store_data_i` | in | `rs2` value |
-| `enable_i` | in | `~halted_q & ~imem_rsp.err`. Must **not** depend on `dmem_rsp` or on any stop cause derived from it (that would be a combinational loop through the memory). Other stop causes need no gating here: illegal instructions already decode to `mem_read = mem_write = 0`, ECALL/EBREAK/jumps never access memory, and the LSU drops `valid` itself on misalignment. |
+| `enable_i` | in | `~rst_i & ~halted_q & ~imem_rsp.err`. Must **not** depend on `dmem_rsp` or on any stop cause derived from it (that would be a combinational loop through the memory). Other stop causes need no gating here: illegal instructions already decode to `mem_read = mem_write = 0`, ECALL/EBREAK/jumps never access memory, and the LSU drops `valid` itself on misalignment. |
 | `dmem_req_o` | out | `dmem_req_t` (lane-placed data, byte enables) |
 | `dmem_rsp_i` | in | `dmem_rsp_t` |
 | `load_data_o` | out | Extended load result |
@@ -614,12 +615,12 @@ The field names follow the RISC-V Formal Interface (RVFI), so riscv-formal can b
 |---|---|
 | `valid` | 1 for every cycle in which an instruction retires or stops the core. 0 during reset and while halted. |
 | `order` | Retire counter, starts at 0 |
-| `insn`, `pc_rdata` | The instruction and its PC |
+| `insn`, `pc_rdata` | The instruction and its PC. `insn = 0` for a fetch error (the word is not trusted, §10) |
 | `pc_wdata` | Next PC (equals `pc_rdata` for a stopping instruction) |
-| `rs1_*`, `rs2_*` | Source registers read, with their values |
+| `rs1_*`, `rs2_*` | Source registers read, with their values; both 0 for an operand the instruction does not read (as in RVFI: e.g. `rs2` of OP-IMM, both of LUI/JAL/FENCE/ECALL) |
 | `rd_addr`, `rd_wdata` | Destination written; **both 0 when nothing is written** (including `rd = x0`) |
 | `mem_addr` | Access address (word-aligned, as in RVFI) |
-| `mem_rmask` / `mem_wmask` | Byte masks of the access; 0 if none |
+| `mem_rmask` / `mem_wmask` | Byte masks of the access; 0 if none. `mem_addr`, the masks and the data fields are all 0 for an instruction that stops the core (it has no memory effect, §10) |
 | `mem_rdata` / `mem_wdata` | Raw word read / lane-placed word written |
 | `trap` | 1 if the instruction stopped the core with an error (§10) |
 | `halt` | 1 for ECALL/EBREAK |
@@ -723,7 +724,7 @@ Assertions compiled with Verilator `--assert` (under `` `ifndef SYNTHESIS ``):
 | A-5 | Decoder: at most one of {`mem_read`, `mem_write`, `branch`, `jump`, `is_fence`, `is_ecall`, `is_ebreak`, `illegal`} is set |
 | A-6 | Decoder: `illegal` implies `!reg_write && !mem_read && !mem_write` |
 
-Verilator is a 2-state simulator, so X-propagation checks need a 4-state simulator. The cocotb unit tests run on Icarus Verilog (4-state) and assert that every checked output is free of X/Z, which covers this for each block. System-level X checks (`next_pc`, `dmem_req` after reset) are added with the core in M3.
+Verilator is a 2-state simulator, so X-propagation checks need a 4-state simulator. The cocotb unit tests run on Icarus Verilog (4-state) and assert that every checked output is free of X/Z, which covers this for each block. System-level X checks are in the `rv_core` unit test (M3.2): from time 0, through reset and while halted, `imem_req.valid`, `dmem_req.valid/we/be` and the whole retire port must be free of X/Z, and `dmem_req` must be X-free whenever it is valid.
 
 ---
 
@@ -746,7 +747,7 @@ Verilator is a 2-state simulator, so X-propagation checks need a 4-state simulat
 | Signals | `lower_snake` | `alu_res` |
 
 ### 14.3 RTL rules
-- `always_ff @(posedge clk_i)` for flops, `always_comb` for logic. No `always @*`, no `always_latch`.
+- `always_ff @(posedge clk_i)` for flops, `always_comb` for logic. No `always @*`, no `always_latch`. The one exception: simulation-only assertion blocks under `` `ifndef SYNTHESIS `` use `always @(posedge clk_i)`, since they hold no state and simulators reject an assertion's implicit `$error` inside `always_ff`.
 - Every `always_comb` assigns defaults at the top, so no latches can be inferred. Every `case` has a `default`.
 - Non-blocking (`<=`) in `always_ff`, blocking (`=`) in `always_comb`. Never mixed.
 - Explicit widths on all constants (`32'd4`, not `4`).
@@ -758,7 +759,7 @@ Verilator is a 2-state simulator, so X-propagation checks need a 4-state simulat
 - `verilator --lint-only -Wall` must report zero warnings. Waivers use `/* verilator lint_off <RULE> */` around the smallest possible region, with a comment saying why.
 - Current waivers: `UNUSEDPARAM` around the constants in `rv_pkg.sv` (§8.1).
 - Bits a module deliberately ignores (e.g. the opcode field in `rv_imm_gen`) are XOR-reduced into a signal whose name contains `unused` (`logic unused_opcode; assign unused_opcode = ^inst_i[6:0];`). Verilator exempts such names from `UNUSED` warnings, so no `lint_off` is needed and any *other* unused bit is still reported.
-- Until `rv_core` exists (M3.2), `make lint` passes `-Wno-MULTITOP` so each block is checked as its own top module. This only silences the "several top-level modules" notice; every module is still fully linted. Once `LINT_TOP=rv_core` is set, the flag is dropped.
+- `make lint` lints with `--top-module rv_core`, which instantiates every other block, so the connections between blocks are checked too. `make lint LINT_TOP=` lints each module as its own top instead, with `-Wno-MULTITOP` (which only silences the "several top-level modules" notice).
 - Format with `verible-verilog-format` (if installed) using the repo's `.verible-format` settings; 2-space indent, 100-column lines.
 
 ### 14.5 Commits

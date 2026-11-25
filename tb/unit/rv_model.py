@@ -408,3 +408,251 @@ def next_pc_ref(*, pc: int, halted: int, stop: int, jump: int, jalr: int, branch
     if halted or stop:
         return pc, misaligned
     return (dest if redirects else (pc + 4) & MASK32), misaligned
+
+
+# ---------------------------------------------------------------------------
+# Core: assembler, memory and instruction-set model (spec §2.3, §4, §9, §10)
+# ---------------------------------------------------------------------------
+# Used by the rv_core test, which runs programs on the RTL and on this model
+# and compares the retire port every cycle. The model is written from the
+# operation column of spec §4 and the rules of §9/§10, not from the RTL
+# structure (it has no ctrl_t, no operand muxes, no stop-priority chain).
+
+IMEM_REQ_FIELDS = [("valid", 1), ("addr", 32)]
+IMEM_RSP_FIELDS = [("ready", 1), ("rdata", 32), ("err", 1)]
+RETIRE_FIELDS = [
+    ("valid", 1), ("order", 64), ("insn", 32), ("pc_rdata", 32), ("pc_wdata", 32),
+    ("rs1_addr", 5), ("rs2_addr", 5), ("rs1_rdata", 32), ("rs2_rdata", 32),
+    ("rd_addr", 5), ("rd_wdata", 32), ("mem_addr", 32), ("mem_rmask", 4), ("mem_wmask", 4),
+    ("mem_rdata", 32), ("mem_wdata", 32), ("trap", 1), ("halt", 1),
+]  # 378 bits
+
+# stop_cause_t, in declaration order (spec §8.4)
+STOP_CAUSES = {
+    "STOP_NONE": 0, "STOP_ECALL": 1, "STOP_EBREAK": 2, "STOP_ILLEGAL": 3,
+    "STOP_MISALIGNED_FETCH": 4, "STOP_MISALIGNED_DATA": 5, "STOP_BUS_ERROR": 6,
+    "STOP_IFETCH_ERROR": 7,
+}
+
+MEM_BASE = 0x8000_0000       # spec §2.3
+MEM_SIZE_BYTES = 0x1_0000
+CONSOLE_ADDR = 0x1000_0000
+
+FORMATS = {row["Instr"]: row["Fmt"] for row in _md_table(_SPEC, "| # | Instr | Fmt")}
+
+
+def asm(name: str, rd: int = 0, rs1: int = 0, rs2: int = 0, imm: int = 0) -> int:
+    """Encode one instruction. Shifts take the shift amount as imm."""
+    match = ENCODINGS[name]["match"]
+    fmt = FORMATS[name]
+    regs = (rd << 7) | (rs1 << 15) | (rs2 << 20)
+    if name in ("ECALL", "EBREAK"):    # every field is fixed
+        return match
+    if name in ("SLLI", "SRLI", "SRAI"):
+        return match | (rd << 7) | (rs1 << 15) | ((imm & 0x1F) << 20)
+    if fmt == "R":
+        return match | regs
+    if fmt == "I":
+        return imm_encode("IMM_I", imm, match | (rd << 7) | (rs1 << 15))
+    if fmt == "S":
+        return imm_encode("IMM_S", imm, match | (rs1 << 15) | (rs2 << 20))
+    if fmt == "B":
+        return imm_encode("IMM_B", imm, match | (rs1 << 15) | (rs2 << 20))
+    if fmt == "U":
+        return imm_encode("IMM_U", imm, match | (rd << 7))
+    if fmt == "J":
+        return imm_encode("IMM_J", imm, match | (rd << 7))
+    raise ValueError(f"unknown format {fmt} for {name}")
+
+
+def asm_li(rd: int, value: int) -> list[int]:
+    """LUI + ADDI pair that loads any 32-bit constant."""
+    value &= MASK32
+    lo = sext(value & 0xFFF, 12)
+    hi = (value - lo) & MASK32
+    return [asm("LUI", rd=rd, imm=hi), asm("ADDI", rd=rd, rs1=rd, imm=to_signed32(lo))]
+
+
+class SimMemory:
+    """The memory map of spec §2.3: RAM at MEM_BASE, CONSOLE, everything else unmapped."""
+
+    def __init__(self, image: dict[int, int] | None = None):
+        self.ram = bytearray(MEM_SIZE_BYTES)
+        self.console = bytearray()
+        # RAM addresses whose fetch reports err (the response still carries
+        # the stored word), to check that a faulting fetch has no effect.
+        self.fetch_faults: set[int] = set()
+        for addr, word in (image or {}).items():
+            self.ram[addr - MEM_BASE:addr - MEM_BASE + 4] = word.to_bytes(4, "little")
+
+    @staticmethod
+    def in_ram(addr: int) -> bool:
+        return MEM_BASE <= addr < MEM_BASE + MEM_SIZE_BYTES
+
+    @staticmethod
+    def is_console(addr: int) -> bool:
+        return addr & ~3 & MASK32 == CONSOLE_ADDR
+
+    def fetch(self, addr: int) -> tuple[int, int]:
+        """(word, err) for an instruction fetch; only RAM is executable."""
+        if not self.in_ram(addr):
+            return 0, 1
+        return self.word(addr), int(addr in self.fetch_faults)
+
+    def word(self, addr: int) -> int:
+        a = (addr & ~3) - MEM_BASE
+        return int.from_bytes(self.ram[a:a + 4], "little")
+
+    def read(self, addr: int) -> tuple[int, int]:
+        """(aligned word, err) for a data read."""
+        if self.in_ram(addr):
+            return self.word(addr), 0
+        if self.is_console(addr):
+            return 0, 0
+        return 0, 1
+
+    def write(self, addr: int, be: int, wdata: int) -> int:
+        """Apply a lane-placed store; returns err."""
+        if self.is_console(addr):
+            if be & 1:
+                self.console.append(wdata & 0xFF)
+            return 0
+        if not self.in_ram(addr):
+            return 1
+        a = (addr & ~3) - MEM_BASE
+        for lane in range(4):
+            if be >> lane & 1:
+                self.ram[a + lane] = (wdata >> (8 * lane)) & 0xFF
+        return 0
+
+
+_LOADS = {"LB": (1, False), "LH": (2, False), "LW": (4, False), "LBU": (1, True), "LHU": (2, True)}
+_STORES = {"SB": 1, "SH": 2, "SW": 4}
+_BRANCH_REF_OPS = {"BEQ": "BR_EQ", "BNE": "BR_NE", "BLT": "BR_LT", "BGE": "BR_GE",
+                   "BLTU": "BR_LTU", "BGEU": "BR_GEU"}
+_ALU_INSTRS = {  # name -> (ALU op, second operand is the immediate)
+    "ADDI": ("ALU_ADD", True), "SLTI": ("ALU_SLT", True), "SLTIU": ("ALU_SLTU", True),
+    "XORI": ("ALU_XOR", True), "ORI": ("ALU_OR", True), "ANDI": ("ALU_AND", True),
+    "SLLI": ("ALU_SLL", True), "SRLI": ("ALU_SRL", True), "SRAI": ("ALU_SRA", True),
+    "ADD": ("ALU_ADD", False), "SUB": ("ALU_SUB", False), "SLL": ("ALU_SLL", False),
+    "SLT": ("ALU_SLT", False), "SLTU": ("ALU_SLTU", False), "XOR": ("ALU_XOR", False),
+    "SRL": ("ALU_SRL", False), "SRA": ("ALU_SRA", False), "OR": ("ALU_OR", False),
+    "AND": ("ALU_AND", False),
+}
+
+
+class CoreModel:
+    """RV32I instruction-set model of rv_core. step() returns the expected
+    retire_t fields for the instruction at pc and updates the state.
+
+    regs[i] is None until written (the RTL register file is not reset); a
+    program that reads such a register is a test bug and raises."""
+
+    def __init__(self, mem: SimMemory, reset_pc: int = RESET_PC):
+        self.mem = mem
+        self.reset_pc = reset_pc
+        self.regs: list[int | None] = [None] * 32   # not cleared by reset (spec §2.2)
+        self.reset()
+
+    def reset(self):
+        self.pc = self.reset_pc
+        self.order = 0
+        self.halted = False
+        self.status = STOP_CAUSES["STOP_NONE"]
+
+    def _reg(self, i: int) -> int:
+        if i == 0:
+            return 0
+        if self.regs[i] is None:
+            raise AssertionError(f"program reads x{i} before writing it")
+        return self.regs[i]
+
+    def step(self) -> dict[str, int]:
+        if self.halted:
+            return struct_unpack(RETIRE_FIELDS, 0)
+        pc = self.pc
+        r = {name: 0 for name, _ in RETIRE_FIELDS}
+        r.update(valid=1, order=self.order, pc_rdata=pc)
+        self.order += 1
+
+        word, ferr = self.mem.fetch(pc)
+        if ferr:
+            return self._stop(r, "STOP_IFETCH_ERROR")   # insn reported as 0
+        r["insn"] = word
+        name, _ = decode_ref(word)
+        if name == "illegal":
+            return self._stop(r, "STOP_ILLEGAL")
+        if name in ("ECALL", "EBREAK"):
+            return self._stop(r, "STOP_" + name)
+
+        fmt = FORMATS[name]
+        rd, rs1, rs2 = (word >> 7) & 31, (word >> 15) & 31, (word >> 20) & 31
+        if fmt in ("R", "I", "S", "B") and name != "FENCE":
+            r["rs1_addr"], r["rs1_rdata"] = rs1, self._reg(rs1)
+        if fmt in ("R", "S", "B"):
+            r["rs2_addr"], r["rs2_rdata"] = rs2, self._reg(rs2)
+        a, b = r["rs1_rdata"], r["rs2_rdata"]
+        imm = imm_decode("IMM_" + fmt, word) if fmt != "R" else 0
+
+        next_pc = (pc + 4) & MASK32
+        result = None   # value written to rd, if any
+        if name in _ALU_INSTRS:
+            op, uses_imm = _ALU_INSTRS[name]
+            result = alu_ref(op, a, imm if uses_imm else b)
+        elif name == "LUI":
+            result = imm
+        elif name == "AUIPC":
+            result = (pc + imm) & MASK32
+        elif name in ("JAL", "JALR"):
+            target = (pc + imm) & MASK32 if name == "JAL" else (a + imm) & MASK32 & ~1
+            if target & 2:
+                return self._stop(r, "STOP_MISALIGNED_FETCH")
+            result, next_pc = (pc + 4) & MASK32, target
+        elif name in _BRANCH_REF_OPS:
+            if branch_ref(_BRANCH_REF_OPS[name], a, b):
+                target = (pc + imm) & MASK32
+                if target & 2:
+                    return self._stop(r, "STOP_MISALIGNED_FETCH")
+                next_pc = target
+        elif name in _LOADS or name in _STORES:
+            addr = (a + imm) & MASK32
+            size = _LOADS[name][0] if name in _LOADS else _STORES[name]
+            if addr % size:
+                return self._stop(r, "STOP_MISALIGNED_DATA")
+            mask = ((1 << size) - 1) << (addr & 3)
+            if name in _LOADS:
+                rdata, err = self.mem.read(addr)
+                if err:
+                    return self._stop(r, "STOP_BUS_ERROR")
+                raw = (rdata >> (8 * (addr & 3))) & ((1 << (8 * size)) - 1)
+                result = raw if _LOADS[name][1] or size == 4 else sext(raw, 8 * size)
+                r.update(mem_addr=addr & ~3, mem_rmask=mask, mem_rdata=rdata)
+            else:
+                data = b & ((1 << (8 * size)) - 1)
+                # Lanes outside the mask carry copies of the data (spec §5.4)
+                wdata = int.from_bytes(bytes(data.to_bytes(4, "little")[lane % size]
+                                             for lane in range(4)), "little")
+                if self.mem.write(addr, mask, wdata):
+                    return self._stop(r, "STOP_BUS_ERROR")
+                r.update(mem_addr=addr & ~3, mem_wmask=mask, mem_wdata=wdata)
+        elif name == "FENCE":
+            pass
+        else:
+            raise AssertionError(f"model has no semantics for {name}")
+
+        if result is not None and rd != 0:
+            self.regs[rd] = result
+            r["rd_addr"], r["rd_wdata"] = rd, result
+        self.pc = next_pc
+        r["pc_wdata"] = next_pc
+        return r
+
+    def _stop(self, r: dict[str, int], cause: str) -> dict[str, int]:
+        """A stopping instruction: no side effects, PC stays, core halts (spec §10)."""
+        r.update(rd_addr=0, rd_wdata=0, mem_addr=0, mem_rmask=0, mem_wmask=0,
+                 mem_rdata=0, mem_wdata=0, pc_wdata=r["pc_rdata"])
+        r["halt"] = int(cause in ("STOP_ECALL", "STOP_EBREAK"))
+        r["trap"] = 1 - r["halt"]
+        self.halted = True
+        self.status = STOP_CAUSES[cause]
+        return r

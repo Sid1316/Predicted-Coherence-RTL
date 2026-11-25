@@ -34,6 +34,8 @@ BLOCKS = {
     "rv_lsu": ["rv_pkg.sv", "rv_lsu.sv"],
     "rv_decoder": ["rv_pkg.sv", "rv_decoder.sv"],
     "rv_pc": ["rv_pc.sv"],
+    "rv_core": ["rv_pkg.sv", "rv_pc.sv", "rv_decoder.sv", "rv_imm_gen.sv", "rv_regfile.sv",
+                "rv_alu.sv", "rv_branch_unit.sv", "rv_lsu.sv", "rv_core.sv"],
 }
 
 

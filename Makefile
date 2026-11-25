@@ -41,10 +41,10 @@ export RISCV_PREFIX PYTHON VERILATOR
 RTL_FILELIST := $(ROOT)/rtl/rtl.f
 RTL_SRCS     := $(addprefix $(ROOT)/,$(shell sed -e 's://.*$$::' -e '/^[[:space:]]*$$/d' $(RTL_FILELIST)))
 
-# Set to rv_core once it exists (M3.2). Until then the blocks are independent,
-# so every module is linted as its own top: -Wno-MULTITOP only silences the
-# "several top-level modules" notice, every module is still fully checked.
-LINT_TOP        ?=
+# rv_core instantiates every other block, so linting it as the top checks the
+# whole design, including the connections between blocks (spec §14.4).
+# LINT_TOP= (empty) lints each module as its own top instead (-Wno-MULTITOP).
+LINT_TOP        ?= rv_core
 LINT_FLAGS      := --lint-only -Wall --quiet $(if $(LINT_TOP),--top-module $(LINT_TOP),-Wno-MULTITOP)
 
 # ---------------------------------------------------------------------------
