@@ -131,3 +131,25 @@ def imm_range(type_name: str) -> tuple[int, int, int]:
     if type_name == "IMM_U":
         return (-(1 << 31), (1 << 31) - step, step)
     return (-(1 << (width - 1)), (1 << (width - 1)) - step, step)
+
+
+# ---------------------------------------------------------------------------
+# Register file (spec §6.5)
+# ---------------------------------------------------------------------------
+
+class RegFileModel:
+    """x0..x31; x0 reads 0 and ignores writes. None means "never written".
+
+    Matches the RTL timing: read() gives the value before the next clock edge,
+    write() is applied at the edge.
+    """
+
+    def __init__(self) -> None:
+        self.regs: list[int | None] = [0] + [None] * 31
+
+    def read(self, addr: int) -> int | None:
+        return 0 if addr == 0 else self.regs[addr]
+
+    def write(self, we: int, addr: int, data: int) -> None:
+        if we and addr != 0:
+            self.regs[addr] = data & MASK32
