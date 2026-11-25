@@ -7,8 +7,8 @@ independent of the RTL's authors; an independent reference (Spike on a Linux
 CI runner) is to be added later.
 
 For each test: build it with the same command as the DUT (arch_build.py),
-run the image on the model, and write Reference.signature from the model's
-memory at the end of the run.
+run the image on the model, and write Reference-pymodel.signature from the
+model's memory at the end of the run, and retire.log, the model's trace.
 """
 
 import logging
@@ -49,3 +49,6 @@ class pymodel(pluginTemplate):
             if r.code != 0:
                 logger.warning(f"pymodel: {Path(name).name}: model ends with exit {r.code} ({r.cause})")
             sig.write_text(r.signature(b.sig_begin, b.sig_end), encoding="ascii", newline="\n")
+            # The model's trace, for the instruction-by-instruction comparison
+            # scripts/run_riscof.py makes after RISCOF's signature check (M6.2).
+            (wd / "retire.log").write_text("".join(l + "\n" for l in r.lines), encoding="ascii", newline="\n")

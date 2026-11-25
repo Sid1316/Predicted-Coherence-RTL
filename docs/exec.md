@@ -185,14 +185,16 @@ Each block gets a cocotb test in `tb/unit/test_<block>.py`, with randomized chec
 **Status: done (2026-11-25).** `make riscv-tests`: 40 of 42 `rv32ui` tests pass; `fence_i` and `ma_data` are waived in `tests/riscv-tests-waivers.txt`, and still run: each must stop with the cause recorded there. `make riscof`: all 39 `rv32i_m/I` tests match the reference, with the Python model as the reference (§8). The arch tests are built with 2 MiB of RAM (`jal-01` needs 1.7 MiB) and `-mno-relax` (spec R-12). An injected SRA bug fails `sra-01` and `srai-01`.
 
 ### M6: Lockstep comparison and random testing (M–L)
-- [ ] **M6.1** `scripts/trace_compare.py`: parse Spike's `--log-commits` output, drop bootrom instructions (PC below `0x8000_0000`), normalize to the retire-log format, and compare instruction by instruction (pc, insn, rd, rd_wdata, memory writes). Report the first mismatch with context.
-- [ ] **M6.2** Run lockstep comparison on every M3/M5 test and every C program.
-- [ ] **M6.3** `scripts/randgen.py`: constrained-random RV32I program generator. Random register values; all ALU ops; loads/stores within a safe aligned data window; forward-only or bounded-loop branches; `jal`/`jalr` to known labels. Seeds are reproducible.
-- [ ] **M6.4** Nightly/batch run: N random programs (start with 1,000 seeds) through RTL + Spike + compare. Any failing seed becomes a regression test.
+- [x] **M6.1** `scripts/trace_compare.py`: parse Spike's `--log-commits` output, drop bootrom instructions (PC below `0x8000_0000`), normalize to the retire-log format, and compare instruction by instruction (pc, insn, rd, rd_wdata, memory writes). Report the first mismatch with context.
+- [x] **M6.2** Run lockstep comparison on every M3/M5 test and every C program.
+- [x] **M6.3** `scripts/randgen.py`: constrained-random RV32I program generator. Random register values; all ALU ops; loads/stores within a safe aligned data window; forward-only or bounded-loop branches; `jal`/`jalr` to known labels. Seeds are reproducible.
+- [x] **M6.4** Nightly/batch run: N random programs (start with 1,000 seeds) through RTL + Spike + compare. Any failing seed becomes a regression test.
 - [ ] **M6.5** *(Optional)* evaluate riscv-dv's Python generator (`pygen`) as a second, independent random source.
 - [ ] **M6.6** *(Stretch)* bind the retire port to riscv-formal and run its RV32I instruction checks.
 
 **Exit criteria:** zero trace mismatches across all directed tests and ≥ 1,000 random seeds.
+
+**Status: M6.1-M6.4 done (2026-11-25), against the Python reference model (§8).** `scripts/trace_compare.py` compares pc, insn, rd/rd_wdata and stored bytes, reads retire logs and Spike `--log-commits` (the Spike parser is tested on hand-written samples only; it meets a real Spike log when Spike runs in CI). Every directed, C, `rv32ui` and arch test is compared with the model instruction by instruction (`make progs`, `make riscv-tests`, `make riscof`). `scripts/randgen.py` + `scripts/run_random.py` (`make random`): seeds 1-1000 all match the model, 547k instructions, every RV32I instruction and every stop cause covered; an injected BGE bug (equal operands not taken) fails on 4 of the first 6 seeds. Open: M6.5, M6.6, and the Spike run in CI.
 
 ### M7: Programs, benchmarks and profiling (M)
 - [ ] **M7.1** Port and run: Dhrystone, CoreMark (rv32i build, multiply/divide in libgcc), and a small Embench subset. All must pass lockstep comparison.

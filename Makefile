@@ -126,6 +126,7 @@ sim-build: $(SIM_EXE) ## Build the Verilator simulator (build/sim/Vrv_soc_sim)
 
 sim-test: $(SIM_EXE) ## Check the Verilator harness against the Python model (M3.4)
 	$(PYTHON) $(ROOT)/tb/sim/test_tb_top.py $(SIM_EXE)
+	$(PYTHON) $(ROOT)/tb/sim/test_trace_compare.py
 
 # Programs are built by scripts/run_progs.py (one place for the compiler
 # flags, spec §12), which also checks each against its header and the model.
@@ -173,11 +174,15 @@ riscof: ## Run riscv-arch-test rv32i_m/I through RISCOF (DUT vs. the Python refe
 	@$(MAKE) --no-print-directory sim-build MEM_SIZE_BYTES=2097152
 	$(PYTHON) $(ROOT)/scripts/run_riscof.py
 
-random: ## Random program tests: make random SEEDS=<n>
-	$(call not_yet,M6.3-M6.4)
+# Random programs (scripts/randgen.py) on the RTL and the reference model;
+# failing seeds are saved to tests/random/ and rerun every time.
+SEEDS ?= 200
+START ?= 1
+random: $(SIM_EXE) ## Random programs vs. the reference model: make random [SEEDS=200] [START=1]
+	$(PYTHON) $(ROOT)/scripts/run_random.py --exe $(SIM_EXE) --seeds $(SEEDS) --start $(START)
 
 regress: lint unit sim-test progs riscv-tests riscof random ## Full regression (filled in at M9.1)
-	@echo "regress: lint, unit, sim-test, progs, riscv-tests and riscof are implemented; random is a placeholder (M6)"
+	@echo "regress: all stages passed (random: $(SEEDS) seeds from $(START))"
 
 syn: ## Yosys synthesis of rv_core
 	$(call not_yet,M8)

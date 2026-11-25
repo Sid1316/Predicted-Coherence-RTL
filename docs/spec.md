@@ -818,10 +818,10 @@ Each instruction must be covered by **all three** sources before Phase 1 is done
 | OR | `t02_alu_reg` | `or` | `or-01` | [x] |
 | AND | `t02_alu_reg` | `and` | `and-01` | [x] |
 | FENCE | `t08_fence_nop` | — (`fence_i` is Zifencei, waived) | `fence-01` | [x] |
-| ECALL | `t09_ecall_halt` | — (`rv32mi-scall` needs CSRs) | — (privilege suite needs CSRs) | [ ] |
-| EBREAK | `t10_ebreak_halt` | — (`rv32mi-sbreak` needs CSRs) | — (privilege suite needs CSRs) | [ ] |
+| ECALL | `t09_ecall_halt` | — (`rv32mi-scall` needs CSRs) | — (privilege suite needs CSRs) | [x] |
+| EBREAK | `t10_ebreak_halt` | — (`rv32mi-sbreak` needs CSRs) | — (privilege suite needs CSRs) | [x] |
 
-For ECALL and EBREAK, the directed tests plus random-test coverage of the halt path are the full coverage in Phase 1. Upstream coverage arrives with Zicsr in Phase 2. Ticked (2026-11-25, M5): every row whose listed sources all pass; FENCE has no riscv-tests source. ECALL/EBREAK wait for the random tests (M6).
+For ECALL and EBREAK, the directed tests plus random-test coverage of the halt path are the full coverage in Phase 1. Upstream coverage arrives with Zicsr in Phase 2. Ticked (2026-11-25, M5): every row whose listed sources all pass; FENCE has no riscv-tests source. ECALL/EBREAK ticked with M6: the random tests (`make random`) end programs with ECALL and EBREAK and with every error stop.
 
 Suite totals at the pinned versions:
 - **riscv-tests `rv32ui`:** 42 tests, of which 40 run. The rows above, plus `simple`, `ld_st` and `st_ld`, which aren't tied to one instruction. `ld_st`/`st_ld` use only aligned accesses on RV32; their 64-bit parts are compiled out. Waived: `fence_i` (Zifencei) and `ma_data` (misaligned loads such as `lw` at offset 1, which this core treats as an error).

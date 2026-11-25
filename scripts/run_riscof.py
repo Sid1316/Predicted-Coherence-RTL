@@ -8,6 +8,8 @@ every test in the work directory itself rather than trusting the exit code:
   - DUT.signature exists, is not empty, and equals Reference.signature;
   - the harness ended the run with exit 0 (RVMODEL_HALT writes tohost = 1),
     so a test cannot pass by matching signatures after a stop;
+  - the RTL retire log matches the model's trace instruction by instruction
+    (scripts/trace_compare.py, M6.2), not only the final signature;
   - the suite has EXPECTED_TESTS tests (spec §15.1: 39 at the pinned 3.10.0),
     so a test that silently drops out of the selection is reported.
 RISCOF's own HTML report is in the work directory (report.html).
@@ -23,6 +25,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+from trace_compare import TraceError, compare, parse_retire  # noqa: E402
 RISCOF_DIR = ROOT / "tests" / "riscof"
 SUITE = ROOT / "tests" / "riscv-arch-test" / "riscv-test-suite"
 EXPECTED_TESTS = 39
@@ -80,13 +84,22 @@ def main() -> int:
         m = EXIT.findall(run_log.read_text(errors="replace")) if run_log.exists() else []
         if not m or m[-1] != "0":
             problems.append(f"harness exit {m[-1] if m else '?'} (see {run_log})")
+        dut_log, ref_log = t / "dut" / "retire.log", t / "ref" / "retire.log"
+        try:
+            report = compare(parse_retire(dut_log.read_text()), parse_retire(ref_log.read_text()))
+            if report:
+                problems.append("trace differs from the model: " + report.replace(chr(10), chr(10) + "        "))
+            n_insn = len(dut_log.read_text().splitlines())
+        except (OSError, TraceError) as e:
+            problems.append(f"trace not compared: {e}")
+            n_insn = 0
         rel = t.relative_to(work).as_posix()
         if problems:
             failed += 1
             print(f"  FAIL  {rel}: {'; '.join(problems)}")
         else:
             n = len(ref.read_text().splitlines())
-            print(f"  PASS  {rel}  ({n} signature words)")
+            print(f"  PASS  {rel}  ({n} signature words, {n_insn} instructions traced)")
 
     print()
     if len(tests) != EXPECTED_TESTS:
