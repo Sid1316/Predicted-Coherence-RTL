@@ -1,0 +1,170 @@
+RISC-V Core (Predicted-Coherence-RTL) - Setup Requirements
+==========================================================
+
+Platform: native Windows 10/11 (no WSL). Commands run in Git Bash.
+Versions below are the ones installed and verified on the development
+machine (2026-11-25). Newer versions will probably work; check with
+"make check-env" after any change.
+
+Quick check once everything is installed (in a NEW Git Bash window):
+
+    make check-env
+
+
+1. REQUIRED TOOLS
+-----------------
+
+  Tool                      Version            Install with
+  ------------------------  -----------------  -----------------------------------------------
+  Git for Windows           2.56.1             https://git-scm.com/download/win
+    (includes Git Bash: bash, sed, grep, awk)
+  GNU make                  4.4.1              winget install ezwinports.make
+  MSYS2                     2026-09-27         winget install MSYS2.MSYS2
+  Verilator                 5.054  (need >= 5) MSYS2 package (section 2)
+  C++ compiler (g++)        16.2.0             MSYS2 package (section 2); Verilator uses it
+                                               to build simulations
+  Perl (MSYS2 UCRT64)       5.44.0             MSYS2 package (section 2)
+  Yosys                     0.66               MSYS2 package (section 2)
+  RISC-V GCC (xPack)        15.2.0-1           https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack/releases
+    prefix riscv-none-elf-  binutils 2.45      file: xpack-riscv-none-elf-gcc-15.2.0-1-win32-x64.zip
+                                               (must link -march=rv32i -mabi=ilp32; xPack does)
+  Python                    3.14.10 (need >= 3.10)   https://www.python.org/downloads/  (use "py")
+  cocotb                    2.1.0              pip, in the project .venv (section 4)
+  RISCOF                    1.25.3             pip, in the project .venv (section 4, workaround)
+
+
+2. MSYS2 PACKAGES
+-----------------
+
+Open "MSYS2 UCRT64" from the Start menu, then:
+
+    pacman -Syu                  (run twice; the first run updates pacman itself)
+    pacman -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-verilator \
+        mingw-w64-ucrt-x86_64-yosys mingw-w64-ucrt-x86_64-iverilog \
+        mingw-w64-ucrt-x86_64-gtkwave mingw-w64-ucrt-x86_64-perl
+
+  Installed versions:
+    mingw-w64-ucrt-x86_64-verilator  5.054-1
+    mingw-w64-ucrt-x86_64-gcc        16.2.0-7
+    mingw-w64-ucrt-x86_64-yosys      0.66-1
+    mingw-w64-ucrt-x86_64-iverilog   1~13.0-2
+    mingw-w64-ucrt-x86_64-gtkwave    3.3.128-1
+    mingw-w64-ucrt-x86_64-perl       5.44.0-3
+
+
+3. PATH (user PATH, not system)
+-------------------------------
+
+Add these two folders to the user PATH
+(Settings > System > About > Advanced system settings > Environment Variables):
+
+    %LOCALAPPDATA%\Programs\xpack-riscv-none-elf-gcc-15.2.0-1\bin
+    C:\msys64\ucrt64\bin
+
+Do NOT add C:\msys64\usr\bin: it clashes with Git Bash's own tools.
+winget adds make to PATH by itself (%LOCALAPPDATA%\Microsoft\WinGet\Links).
+Open a new Git Bash window after changing PATH.
+
+
+4. PYTHON VIRTUAL ENVIRONMENT
+-----------------------------
+
+In Git Bash, in the repository root:
+
+    py -m venv .venv
+    source .venv/Scripts/activate
+    pip install cocotb
+
+RISCOF workaround (Python 3.14): riscv-config pins PyYAML==5.2, which has no
+build for Python 3.14 and would need Microsoft C++ Build Tools. Install
+RISCOF without its pins, then its dependencies with the current PyYAML:
+
+    pip install --no-deps riscof riscv-config riscv-isac
+    pip install "GitPython==3.1.17" click Jinja2 pytz Cerberus ruamel.yaml pyyaml \
+        "pyelftools==0.26" colorlog pytablewriter
+
+"pip check" then reports "riscv-config requires pyyaml==5.2"; this is expected.
+The Makefile and scripts/check_env.sh use .venv automatically; activating it
+is only needed for running pip or python by hand.
+
+  Installed packages (pip freeze):
+    cocotb==2.1.0           riscof==1.25.3          riscv-config==3.18.3
+    riscv-isac==0.18.0      PyYAML==6.0.4           GitPython==3.1.17
+    pyelftools==0.26        ruamel.yaml==0.19.1     Cerberus==1.3.8
+    click==8.5.1            Jinja2==3.1.6           MarkupSafe==3.0.4
+    pytz==2026.6            colorlog==6.12.0        pytablewriter==1.2.1
+    DataProperty==1.1.1     tabledata==1.3.5        typepy==1.3.5
+    mbstrdecoder==1.1.5     pathvalidate==3.3.1     tcolorpy==0.1.7
+    chardet==6.0.0.post1    python-dateutil==2.9.0.post0
+    gitdb==4.0.12           smmap==5.0.3            six==1.17.0
+    find_libpython==0.5.1   pytest==9.2.0           pluggy==1.7.0
+    iniconfig==2.3.1        packaging==26.4         Pygments==2.21.0
+    colorama==0.4.6         setuptools==84.2.1
+
+
+5. OPTIONAL TOOLS
+-----------------
+
+  Icarus Verilog   13.0      installed (MSYS2); 4-state X checks (spec.md section 13)
+  GTKWave          3.3.128   installed (MSYS2); waveform viewer
+  nextpnr-ecp5     -         not installed; FPGA timing for M8
+  Verible          -         not installed; SystemVerilog formatter
+  Surfer           -         not installed; alternative waveform viewer
+  Sail RISC-V      -         not installed; possible RISCOF reference model
+
+  Spike (riscv-isa-sim): NOT AVAILABLE on native Windows. The plan uses it as
+  the reference model for M5.3 (RISCOF) and M6 (lockstep). Choosing a
+  replacement is an open decision, see docs/exec.md section 8.
+
+
+6. TEST SUITES (git submodules)
+-------------------------------
+
+After cloning:
+
+    git submodule update --init --recursive
+
+  tests/riscv-tests       1b3f8bd (master, 2026-11-24)
+  tests/riscv-arch-test   tag 3.10.0 (fc32e41) - last release with the RISCOF
+                          layout the plan uses; do not move to newer main
+
+
+7. GIT AND GITHUB (SSH)
+-----------------------
+
+  git config --global user.name  "<your name>"
+  git config --global user.email "<your email>"
+
+  SSH key:      ssh-keygen -t ed25519 -C "<your email>"
+                (creates ~/.ssh/id_ed25519 and id_ed25519.pub; use a passphrase)
+                Add id_ed25519.pub on GitHub: Settings > SSH and GPG keys > New SSH key
+  known_hosts:  GitHub host keys (from https://api.github.com/meta)
+  ~/.ssh/config:
+                Host github.com
+                  HostName github.com
+                  User git
+                  IdentityFile ~/.ssh/id_ed25519
+                  IdentitiesOnly yes
+                  AddKeysToAgent yes
+  ~/.bashrc:    starts one ssh-agent per login in Git Bash and loads the key
+                (GitHub's "Auto-launching ssh-agent on Git for Windows" snippet)
+  Test:         ssh -T git@github.com
+  Remote:       origin = git@github.com:Sid1316/Predicted-Coherence-RTL.git
+
+  Pushing from a PowerShell window: Git's own ssh can't ask for the passphrase
+  there, so use Windows' ssh:
+    git -c core.sshCommand=C:/Windows/System32/OpenSSH/ssh.exe push
+
+
+8. KNOWN WINDOWS QUIRKS
+-----------------------
+
+  - Verilator: MSYS2's "verilator" command is a Perl script that fails under
+    Git Bash's Perl (missing Pod::Usage). The Makefile and check_env.sh call
+    the binary directly instead:
+      VERILATOR_ROOT=C:/msys64/ucrt64/share/verilator C:/msys64/ucrt64/bin/verilator_bin.exe
+  - Python: "python3" and sometimes "python" are Microsoft Store placeholders.
+    Use "py" or the .venv interpreter; the scripts detect the real one.
+  - Line endings: .gitattributes forces LF for every file, so scripts and the
+    Makefile keep working when edited on Windows.
+  - Paths with short names (e.g. BAJORI~1) confuse Verilator; use full paths.
