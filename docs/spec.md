@@ -157,7 +157,7 @@ Instruction fetch is only legal from RAM. A fetch outside RAM sets the error fla
 | Target | Action |
 |---|---|
 | `make lint` | Verilator lint of all RTL with `-Wall` |
-| `make unit` | cocotb unit tests for each block (`tb/unit/`) |
+| `make unit` | cocotb unit tests for each block (`tb/unit/`), on Icarus Verilog. `BLOCKS="rv_alu ..."` picks blocks, `WAVES=1` writes FST waveforms |
 | `make sim PROG=<path>` | Build one program, run it on the RTL, print result and exit code |
 | `make spike PROG=<path>` | Run the same ELF on Spike and save the commit log |
 | `make compare PROG=<path>` | `sim` + `spike` + `trace_compare.py` |
@@ -710,7 +710,7 @@ Assertions compiled with Verilator `--assert` (under `` `ifndef SYNTHESIS ``):
 | A-5 | Decoder: at most one of {`mem_read`, `mem_write`, `branch`, `jump`, `is_fence`, `is_ecall`, `is_ebreak`, `illegal`} is set |
 | A-6 | Decoder: `illegal` implies `!reg_write && !mem_read && !mem_write` |
 
-Verilator is a 2-state simulator, so X-propagation checks (no X on `ctrl_o`, `next_pc`, `dmem_req` after reset) need a 4-state simulator. They are optional in Phase 1: run the unit tests once on Icarus Verilog if it is installed.
+Verilator is a 2-state simulator, so X-propagation checks need a 4-state simulator. The cocotb unit tests run on Icarus Verilog (4-state) and assert that every checked output is free of X/Z, which covers this for each block. System-level X checks (`next_pc`, `dmem_req` after reset) are added with the core in M3.
 
 ---
 

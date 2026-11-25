@@ -55,7 +55,7 @@ The host is Windows 10, and the project runs **natively on Windows, without WSL*
 | xPack RISC-V GCC (`riscv-none-elf-*`) | Assemble/compile tests | Build with `-march=rv32i -mabi=ilp32`; the Makefile also accepts other prefixes |
 | Spike (riscv-isa-sim) | Golden reference model | **No native Windows build.** Replacement is an open decision (§8) |
 | Python 3.10+ | Scripts, trace compare, random test generator | Use a venv |
-| cocotb | Unit tests of individual RTL blocks | Pin a version known to work with your Verilator version |
+| cocotb + Icarus Verilog | Unit tests of individual RTL blocks | cocotb 2.1 on Icarus 13; cocotb has no Verilator plugin on Windows. Icarus is 4-state, so unit tests also catch X/Z |
 | RISCOF + Sail or Spike plugin | Architectural compliance (riscv-arch-test) | |
 | Yosys (+ nextpnr / OpenSTA) | Synthesis characterization | Area + critical path estimate |
 | GTKWave or Surfer | Waveform viewing | |
@@ -143,9 +143,9 @@ All four items are drafted in [spec.md](spec.md); this milestone is reviewing th
 **Status: done (2026-11-25).** spec.md rev 1.1 approved; `rtl/rv_pkg.sv` is in `rtl/rtl.f` and `make lint` is clean.
 
 ### M2: Datapath blocks and unit tests (M–L)
-Each block gets a cocotb test, with randomized checks against a Python reference where that makes sense.
+Each block gets a cocotb test in `tb/unit/test_<block>.py`, with randomized checks against a Python reference (`tb/unit/rv_model.py`) where that makes sense. Tests run on Icarus Verilog through `tb/unit/run_unit.py` (`make unit`); Verilator stays the lint tool. Each test suite is checked by injecting a bug and confirming it fails.
 
-- [ ] **M2.1** `rv_alu`: ADD, SUB, SLL, SLT, SLTU, XOR, SRL, SRA, OR, AND. Test shift amounts 0/31, signed edge cases (`0x8000_0000`, `-1`), random vectors vs. Python.
+- [x] **M2.1** `rv_alu`: ADD, SUB, SLL, SLT, SLTU, XOR, SRL, SRA, OR, AND. Test shift amounts 0/31, signed edge cases (`0x8000_0000`, `-1`), random vectors vs. Python.
 - [ ] **M2.2** `rv_imm_gen`: I/S/B/U/J formats. Check sign extension and bit scrambling for B/J with random instruction words.
 - [ ] **M2.3** `rv_regfile`: x0 stays 0 after writes, read-after-write timing, all 31 registers written and read back.
 - [ ] **M2.4** `rv_branch_unit`: BEQ/BNE/BLT/BGE/BLTU/BGEU, signed vs. unsigned edge cases.
@@ -223,7 +223,7 @@ Each block gets a cocotb test, with randomized checks against a Python reference
 | Layer | Tool | What it catches |
 |---|---|---|
 | Lint | Verilator `-Wall` | Width mismatches, latches, unused/undriven signals |
-| Unit | cocotb | Block-level functional bugs, edge cases |
+| Unit | cocotb on Icarus | Block-level functional bugs, edge cases, X/Z on outputs |
 | Directed | Hand-written asm | Bring-up, basic integration |
 | Compliance | riscv-tests, riscv-arch-test (RISCOF) | Spec conformance per instruction |
 | Lockstep | Spike commit-log comparison | Any architectural-state divergence, found at the first wrong instruction |
@@ -257,7 +257,7 @@ Each block gets a cocotb test, with randomized checks against a Python reference
 | **Spike has no native Windows build** | No reference model for lockstep (M6) or for RISCOF signatures (M5.3) | **Open decision, needed before M5.3.** Options: (a) write a small Python RV32I reference model and use it for both; (b) use Sail's prebuilt model if a Windows build is available; (c) run Spike only in CI on a Linux runner |
 | riscv-tests' stock env needs CSRs | Tests won't run | Custom minimal env (M5.1) |
 | Spike trace format quirks (bootrom, x0 writes, version differences) | False mismatches | Normalize in `trace_compare.py`; pin the Spike version |
-| cocotb / Verilator version incompatibility | Unit tests break | Pin known-good versions; fall back to Icarus for unit tests if needed |
+| cocotb / simulator incompatibility | Unit tests break | Resolved for M2: unit tests run on Icarus, which cocotb supports on Windows; versions pinned in setup_require.txt |
 | Single-cycle combinational memory can't map to FPGA BRAM | Misleading synthesis numbers | Synthesize the core alone, memory as ports (M8.1); record as a Phase 2 input |
 | Scope creep (adding M/Zicsr/pipelining early) | Phase 1 never finishes | Anything outside §1 goes into a "Phase 2 backlog" list, not into the RTL |
 

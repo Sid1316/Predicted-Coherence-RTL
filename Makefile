@@ -77,8 +77,8 @@ else
 	@echo "lint: clean ($(words $(RTL_SRCS)) files)"
 endif
 
-unit: ## cocotb unit tests for each RTL block
-	$(call not_yet,M2)
+unit: ## cocotb unit tests on Icarus: make unit [BLOCKS="rv_alu ..."] [WAVES=1]
+	$(PYTHON) $(ROOT)/tb/unit/run_unit.py $(BLOCKS) $(if $(WAVES),--waves)
 
 sim: ## Run one program on the RTL: make sim PROG=<path>
 	$(call need_prog)
@@ -102,7 +102,7 @@ random: ## Random program tests: make random SEEDS=<n>
 	$(call not_yet,M6.3-M6.4)
 
 regress: lint unit riscv-tests riscof random ## Full regression (filled in at M9.1)
-	@echo "regress: only lint is implemented so far; the other stages are placeholders"
+	@echo "regress: lint and unit are implemented; the other stages are placeholders"
 
 syn: ## Yosys synthesis of rv_core
 	$(call not_yet,M8)

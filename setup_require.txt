@@ -25,6 +25,8 @@ Quick check once everything is installed (in a NEW Git Bash window):
                                                to build simulations
   Perl (MSYS2 UCRT64)       5.44.0             MSYS2 package (section 2)
   Yosys                     0.66               MSYS2 package (section 2)
+  Icarus Verilog            13.0               MSYS2 package (section 2); simulator for the cocotb
+                                               unit tests (make unit)
   RISC-V GCC (xPack)        15.2.0-1           https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack/releases
     prefix riscv-none-elf-  binutils 2.45      file: xpack-riscv-none-elf-gcc-15.2.0-1-win32-x64.zip
                                                (must link -march=rv32i -mabi=ilp32; xPack does)
@@ -105,7 +107,6 @@ is only needed for running pip or python by hand.
 5. OPTIONAL TOOLS
 -----------------
 
-  Icarus Verilog   13.0      installed (MSYS2); 4-state X checks (spec.md section 13)
   GTKWave          3.3.128   installed (MSYS2); waveform viewer
   nextpnr-ecp5     -         not installed; FPGA timing for M8
   Verible          -         not installed; SystemVerilog formatter

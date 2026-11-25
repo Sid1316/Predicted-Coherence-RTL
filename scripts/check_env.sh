@@ -96,6 +96,7 @@ check required "riscv objcopy"  "${RISCV_PREFIX}objcopy" --version
 check required "riscv objdump"  "${RISCV_PREFIX}objdump" --version
 check required "riscv nm"       "${RISCV_PREFIX}nm" --version
 check required "yosys"          yosys -V
+check required "iverilog"       iverilog -V
 
 if [ -n "${PYTHON:-}" ]; then
   if ver=$("$PYTHON" -c "import cocotb; print(cocotb.__version__)" 2>/dev/null); then
@@ -159,7 +160,6 @@ check optional "nextpnr-ecp5"      nextpnr-ecp5 --version
 check optional "gtkwave"           gtkwave --version
 check optional "surfer"            surfer --version
 check optional "verible-format"    verible-verilog-format --version
-check optional "iverilog"          iverilog -V
 
 echo
 echo "Using RISCV_PREFIX=${RISCV_PREFIX} PYTHON=${PYTHON:-none} VERILATOR=${VERILATOR}"
