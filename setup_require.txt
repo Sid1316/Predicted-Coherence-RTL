@@ -113,9 +113,10 @@ is only needed for running pip or python by hand.
   Surfer           -         not installed; alternative waveform viewer
   Sail RISC-V      -         not installed; possible RISCOF reference model
 
-  Spike (riscv-isa-sim): NOT AVAILABLE on native Windows. The plan uses it as
-  the reference model for M5.3 (RISCOF) and M6 (lockstep). Choosing a
-  replacement is an open decision, see docs/exec.md section 8.
+  Spike (riscv-isa-sim): NOT AVAILABLE on native Windows. Decided
+  2026-11-25 (docs/exec.md section 8): the project's Python RV32I model
+  (tb/unit/rv_model.py) is the reference for RISCOF (M5.3) and lockstep (M6);
+  Spike on a Linux CI runner is to be added later as an independent check.
 
 
 6. TEST SUITES (git submodules)

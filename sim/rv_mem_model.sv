@@ -97,6 +97,17 @@ module rv_mem_model
   end
 
   // -------------------------------------------------------------------------
+  // Read access for the C++ harness (signature dump, spec §11): word `idx`
+  // of the array, 0 outside it. Verilator only; Icarus has no DPI.
+  // -------------------------------------------------------------------------
+`ifdef VERILATOR
+  export "DPI-C" function rv_mem_peek;
+  function automatic int unsigned rv_mem_peek(input int unsigned idx);
+    return (idx < WORDS) ? mem[idx[IDX_W-1:0]] : 32'd0;
+  endfunction
+`endif
+
+  // -------------------------------------------------------------------------
   // Initial contents
   // -------------------------------------------------------------------------
   initial begin

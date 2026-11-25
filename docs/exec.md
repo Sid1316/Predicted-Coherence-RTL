@@ -175,12 +175,14 @@ Each block gets a cocotb test in `tb/unit/test_<block>.py`, with randomized chec
 **Status: done (2026-11-25).** As built: `tohost`/`fromhost` are defined in `crt0.S`, not in `link.ld` (spec R-3). Programs are built by `scripts/run_progs.py`, which `make sim PROG=`, `make asm`, `make c` and `make progs` call, so the compiler flags (spec §12) live in one place; it gets the `tohost` address through `scripts/elf2hex.py` (`nm`), not in the Makefile. rvlib (`sw/common/include/rvlib.h`) also has `puts`, `snprintf`, `memmove`, `memcmp`, `strlen`, `strcmp` and `exit`. `sw/c/libc_test.c` checks crt0, rvlib and libgcc on the core; every program's retire log is also compared with the Python model.
 
 ### M5: ISA compliance (M–L)
-- [ ] **M5.1** **riscv-tests (`rv32ui-p-*`)**: the stock `p` environment uses CSRs (`mtvec`, `mhartid`, …), which we don't have. Write a **custom env** in `sw/common/env/` with a minimal `riscv_test.h`: `RVTEST_CODE_BEGIN` just sets up registers, `RVTEST_PASS`/`RVTEST_FAIL` write `1` / `(TESTNUM<<1)|1` to `tohost`.
-- [ ] **M5.2** Run all `rv32ui` tests. **Expected exclusions:** `fence_i` (Zifencei, not in Phase 1) and `ma_data` (misaligned data, which we treat as an error). Record the exclusions in a waiver file with the reason.
-- [ ] **M5.3** **riscv-arch-test via RISCOF**: write the DUT plugin (compile with our env, run Verilator, dump the memory region between `begin_signature` and `end_signature`). Write `model_test.h` (`RVMODEL_HALT` → `tohost`, `RVMODEL_DATA_BEGIN/END`). Use Sail or Spike as the reference.
-- [ ] **M5.4** Run the `rv32i_m/I` suite and get it to 100 % pass.
+- [x] **M5.1** **riscv-tests (`rv32ui-p-*`)**: the stock `p` environment uses CSRs (`mtvec`, `mhartid`, …), which we don't have. Write a **custom env** in `sw/common/env/` with a minimal `riscv_test.h`: `RVTEST_CODE_BEGIN` just sets up registers, `RVTEST_PASS`/`RVTEST_FAIL` write `1` / `(TESTNUM<<1)|1` to `tohost`.
+- [x] **M5.2** Run all `rv32ui` tests. **Expected exclusions:** `fence_i` (Zifencei, not in Phase 1) and `ma_data` (misaligned data, which we treat as an error). Record the exclusions in a waiver file with the reason.
+- [x] **M5.3** **riscv-arch-test via RISCOF**: write the DUT plugin (compile with our env, run Verilator, dump the memory region between `begin_signature` and `end_signature`). Write `model_test.h` (`RVMODEL_HALT` → `tohost`, `RVMODEL_DATA_BEGIN/END`). Use Sail or Spike as the reference.
+- [x] **M5.4** Run the `rv32i_m/I` suite and get it to 100 % pass.
 
 **Exit criteria:** every non-waived `rv32ui-p-*` test passes; RISCOF `rv32i_m/I` reports all tests passing.
+
+**Status: done (2026-11-25).** `make riscv-tests`: 40 of 42 `rv32ui` tests pass; `fence_i` and `ma_data` are waived in `tests/riscv-tests-waivers.txt`, and still run: each must stop with the cause recorded there. `make riscof`: all 39 `rv32i_m/I` tests match the reference, with the Python model as the reference (§8). The arch tests are built with 2 MiB of RAM (`jal-01` needs 1.7 MiB) and `-mno-relax` (spec R-12). An injected SRA bug fails `sra-01` and `srai-01`.
 
 ### M6: Lockstep comparison and random testing (M–L)
 - [ ] **M6.1** `scripts/trace_compare.py`: parse Spike's `--log-commits` output, drop bootrom instructions (PC below `0x8000_0000`), normalize to the retire-log format, and compare instruction by instruction (pc, insn, rd, rd_wdata, memory writes). Report the first mismatch with context.
@@ -256,7 +258,7 @@ Each block gets a cocotb test in `tb/unit/test_<block>.py`, with randomized chec
 | Risk | Impact | Mitigation |
 |---|---|---|
 | Toolchain friction on native Windows (Verilator needs a C++ compiler and make; mixing Git Bash with MSYS2) | Lost days on setup | `check_env.sh` reports every tool; only `C:\msys64\ucrt64\bin` goes on `PATH`; pin tool versions in the README |
-| **Spike has no native Windows build** | No reference model for lockstep (M6) or for RISCOF signatures (M5.3) | **Open decision, needed before M5.3.** Options: (a) write a small Python RV32I reference model and use it for both; (b) use Sail's prebuilt model if a Windows build is available; (c) run Spike only in CI on a Linux runner |
+| **Spike has no native Windows build** | No reference model for lockstep (M6) or for RISCOF signatures (M5.3) | **Decided 2026-11-25:** (a) now, (c) later. The project's Python RV32I model (`tb/unit/rv_model.py`) is the reference for RISCOF (M5.3) and lockstep (M6). It is not independent of the RTL's authors, so Spike on a Linux CI runner is to be added as an independent cross-check. Other options considered: (b) a native Sail build (uncertain effort), (c) alone (slower loop, CI needed before M5.3). |
 | riscv-tests' stock env needs CSRs | Tests won't run | Custom minimal env (M5.1) |
 | Spike trace format quirks (bootrom, x0 writes, version differences) | False mismatches | Normalize in `trace_compare.py`; pin the Spike version |
 | cocotb / simulator incompatibility | Unit tests break | Resolved for M2: unit tests run on Icarus, which cocotb supports on Windows; versions pinned in setup_require.txt |

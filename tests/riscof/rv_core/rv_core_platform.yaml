@@ -1,0 +1,6 @@
+# rv_core platform description for RISCOF / riscv-config (exec.md M5.3).
+# Phase 1 has no timer or interrupts; the labels are what riscv-config requires.
+nmi:
+  label: nmi_vector
+reset:
+  label: reset_vector

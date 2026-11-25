@@ -96,8 +96,8 @@ Run `make help` for the current list. Targets marked *not implemented* print the
 | `make sim PROG=sw/c/hello` | M3/M4 | Build, convert and run one program (`sw/c/<prog>` or `sw/asm/<test>`), showing its console output; `WAVES=1`, `SEED=` |
 | `make spike PROG=...` | M6 | Run one program on Spike |
 | `make compare PROG=...` | M6 | RTL vs. Spike lockstep comparison |
-| `make riscv-tests` | M5 | `rv32ui-p-*` suite |
-| `make riscof` | M5 | riscv-arch-test `rv32i_m/I` via RISCOF |
+| `make riscv-tests` | M5 | `rv32ui-p-*` suite with the custom env; waived tests must fail as `tests/riscv-tests-waivers.txt` records |
+| `make riscof` | M5 | riscv-arch-test `rv32i_m/I` (39 tests) via RISCOF: DUT on a 2 MiB-RAM simulator (`build/sim-2097152/`) vs. the Python reference model |
 | `make random SEEDS=n` | M6 | Random program tests |
 | `make regress` | M9 | Everything, in order |
 | `make syn` | M8 | Yosys synthesis |

@@ -2,6 +2,7 @@
 //
 //   Vrv_soc_sim +hex=<file> [+tohost=<hex addr>] [+max_cycles=<n>] [+retire_log=<file>]
 //               [+waves[=<file>]] [+verilator+seed+<n>] [+verilator+rand+reset+<0|1|2>]
+//               [+signature=<file> +sig_begin=<hex addr> +sig_end=<hex addr>]
 //
 //   - +hex= is required (rv_mem_model loads it with $readmemh). +tohost= and
 //     +retire_log= are read by rv_soc_sim; the harness only checks them.
@@ -10,6 +11,10 @@
 //     The run ends right after the edge where that happens, so the tohost
 //     store is the last line of the retire log.
 //   - +waves writes waves.fst (waves.vcd in a VCD build) unless a file is named.
+//   - +signature= (RISCOF, spec §11): when the run ends (any result but a
+//     harness error), the words in [sig_begin, sig_end) are written to the
+//     file, one per line as 8 lower-case hex digits. All three plusargs or
+//     none; both addresses word aligned, inside RAM, begin <= end.
 //   - stdout carries only the program's console output (rv_soc_sim's $write),
 //     byte for byte (binary mode on Windows).
 //     The harness writes its result line to stderr, as
@@ -45,7 +50,12 @@
 #include <io.h>
 #endif
 
+// The build defines DPI_DLLISPEC empty: svdpi.h would otherwise declare the
+// sv* functions __declspec(dllimport) on Windows, but Verilator links them
+// statically (verilated_dpi.cpp).
 #include "Vrv_soc_sim.h"
+#include "Vrv_soc_sim__Dpi.h"   // rv_mem_peek (sim/rv_mem_model.sv)
+#include "svdpi.h"
 #include "verilated.h"
 // The build picks FST (--trace-fst, needs liblz4) or VCD (--trace-vcd);
 // Verilator defines VM_TRACE_FST / VM_TRACE_VCD to match.
@@ -134,7 +144,18 @@ struct Args {
   uint64_t    max_cycles  = DEFAULT_MAX_CYCLES;
   std::string retire_log;
   std::string waves;          // empty: no waves
+  std::string signature;      // empty: no signature dump
+  bool        have_sig_begin = false, have_sig_end = false;
+  uint32_t    sig_begin = 0, sig_end = 0;
 };
+
+// A 32-bit hex address as nm prints it (no 0x).
+uint32_t parse_addr(const char* arg, const char* v) {
+  uint64_t n = 0;
+  if (std::strchr(v, 'x') != nullptr || std::strchr(v, 'X') != nullptr || !parse_u64(v, 16, 0xFFFFFFFFull, &n))
+    harness_error("bad %s (expected a 32-bit hex address without 0x)", arg);
+  return static_cast<uint32_t>(n);
+}
 
 bool starts_with(const char* s, const char* prefix, const char** rest) {
   const size_t n = std::strlen(prefix);
@@ -171,6 +192,15 @@ Args parse_args(int argc, char** argv) {
     } else if (starts_with(s, "+waves=", &v)) {
       if (*v == '\0') harness_error("empty +waves=%s", v);
       a.waves = v;
+    } else if (starts_with(s, "+signature=", &v)) {
+      if (*v == '\0') harness_error("empty +signature=%s", v);
+      a.signature = v;
+    } else if (starts_with(s, "+sig_begin=", &v)) {
+      a.sig_begin      = parse_addr(s, v);
+      a.have_sig_begin = true;
+    } else if (starts_with(s, "+sig_end=", &v)) {
+      a.sig_end      = parse_addr(s, v);
+      a.have_sig_end = true;
     } else if (std::strncmp(s, "+verilator+", 11) == 0) {
       // Verilator's own runtime options; VerilatedContext::commandArgs reads them.
     } else {
@@ -178,6 +208,15 @@ Args parse_args(int argc, char** argv) {
     }
   }
   if (a.hex.empty()) harness_error("missing +hex=<file>%s", "");
+  const bool any_sig = !a.signature.empty() || a.have_sig_begin || a.have_sig_end;
+  if (any_sig) {
+    if (a.signature.empty() || !a.have_sig_begin || !a.have_sig_end)
+      harness_error("+signature=, +sig_begin= and +sig_end= go together%s", "");
+    const uint64_t lo = 0x80000000ull, hi = lo + MEM_SIZE_BYTES;
+    if ((a.sig_begin | a.sig_end) & 3u) harness_error("+sig_begin=/+sig_end= must be word aligned%s", "");
+    if (a.sig_begin > a.sig_end) harness_error("+sig_begin= is above +sig_end=%s", "");
+    if (a.sig_begin < lo || a.sig_end > hi) harness_error("signature range is outside RAM%s", "");
+  }
   return a;
 }
 
@@ -277,6 +316,7 @@ int main(int argc, char** argv) {
 #endif
   const Args args = parse_args(argc, argv);
   check_hex(args.hex);
+  if (!args.signature.empty()) check_writable(args.signature, "cannot write +signature=%s");
   if (!args.retire_log.empty()) check_writable(args.retire_log, "cannot write +retire_log=%s");
 
   auto ctx = std::make_unique<VerilatedContext>();
@@ -363,6 +403,15 @@ int main(int argc, char** argv) {
   }
 
   half_cycle(0);   // one more half cycle so the waves show the final state
+
+  if (!args.signature.empty()) {
+    FILE* sig = std::fopen(args.signature.c_str(), "wb");
+    if (sig == nullptr) harness_error("cannot write +signature=%s", args.signature.c_str());
+    svSetScope(svGetScopeFromName("TOP.rv_soc_sim.u_mem"));
+    for (uint32_t a = args.sig_begin; a < args.sig_end; a += 4)
+      std::fprintf(sig, "%08x\n", rv_mem_peek((a - 0x80000000u) / 4));
+    std::fclose(sig);
+  }
   top->final();    // closes the retire log
   if (g_trace) g_trace->close();
   std::fflush(stdout);

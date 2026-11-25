@@ -42,7 +42,7 @@ def run(cmd: list[str]) -> str:
     return p.stdout.decode(errors="replace")
 
 
-def check_sections(elf: Path) -> None:
+def check_sections(elf: Path, mem_size: int = MEM_SIZE_BYTES) -> None:
     """Every SHF_ALLOC section with contents (not NOBITS) must be inside RAM."""
     out = run([tool("readelf"), "-S", "-W", str(elf)])
     for line in out.splitlines():
@@ -52,9 +52,9 @@ def check_sections(elf: Path) -> None:
         name, kind, addr, size, flags = m[1], m[2], int(m[3], 16), int(m[4], 16), m[5]
         if "A" not in flags or kind == "NOBITS" or size == 0:
             continue
-        if not (MEM_BASE <= addr and addr + size <= MEM_BASE + MEM_SIZE_BYTES):
+        if not (MEM_BASE <= addr and addr + size <= MEM_BASE + mem_size):
             raise Elf2HexError(f"section {name} at {addr:#010x}+{size:#x} is outside RAM "
-                               f"({MEM_BASE:#010x}..{MEM_BASE + MEM_SIZE_BYTES:#010x})")
+                               f"({MEM_BASE:#010x}..{MEM_BASE + mem_size:#010x})")
 
 
 def tohost_address(elf: Path) -> int:
@@ -65,9 +65,9 @@ def tohost_address(elf: Path) -> int:
     raise Elf2HexError(f"{elf.name}: no tohost symbol (spec §11: the program must define it)")
 
 
-def elf2hex(elf: Path, hexf: Path) -> int:
-    """Write the image; return the tohost address."""
-    check_sections(elf)
+def elf2hex(elf: Path, hexf: Path, mem_size: int = MEM_SIZE_BYTES) -> int:
+    """Write the image; return the tohost address. mem_size: RAM size in bytes."""
+    check_sections(elf, mem_size)
     run([tool("objcopy"), "-O", "verilog", "--verilog-data-width=4",
          f"--change-addresses=-{MEM_BASE:#x}", str(elf), str(hexf)])
     return tohost_address(elf)

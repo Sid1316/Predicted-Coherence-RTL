@@ -1,0 +1,33 @@
+# rv_core ISA description for RISCOF / riscv-config (docs/spec.md §4; exec.md M5.3).
+# RV32I only. The core has no Zicsr, so it has no misa CSR; riscv-config
+# still requires misa to be described as accessible. The entry below only
+# describes the ISA (MXL = 1, extension bit I) and is never read by the
+# rv32i_m/I tests.
+hart_ids: [0]
+hart0:
+  ISA: RV32I
+  physical_addr_sz: 32
+  User_Spec_Version: '2.3'
+  supported_xlen: [32]
+  misa:
+    reset-val: 0x40000100
+    rv32:
+      accessible: true
+      mxl:
+        implemented: true
+        type:
+          warl:
+            dependency_fields: []
+            legal:
+              - mxl[1:0] in [0x1]
+            wr_illegal:
+              - Unchanged
+      extensions:
+        implemented: true
+        type:
+          warl:
+            dependency_fields: []
+            legal:
+              - extensions[25:0] bitmask [0x0000100, 0x0000000]
+            wr_illegal:
+              - Unchanged

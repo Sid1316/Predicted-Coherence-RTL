@@ -1,0 +1,10 @@
+# riscv-tests rv32ui tests that cannot pass on this core (docs/exec.md M5.2, docs/spec.md §15.1).
+#
+# Format: <test> <expected exit code> [<stop cause>] -- <reason>
+#
+# A waived test still runs: scripts/run_progs.py checks that it ends with the
+# exit code and stop cause given here, so a waiver whose reason stops being
+# true (the test starts passing, or fails some other way) is reported.
+
+fence_i  3 STOP_ILLEGAL          -- FENCE.I is Zifencei, not in Phase 1; MISC-MEM with funct3 = 001 is illegal (spec §4.2 rule 3)
+ma_data  3 STOP_MISALIGNED_DATA  -- misaligned loads and stores stop the core in Phase 1 (exec.md §1, spec §10)

@@ -474,10 +474,14 @@ def asm_li(rd: int, value: int) -> list[int]:
 
 
 class SimMemory:
-    """The memory map of spec §2.3: RAM at MEM_BASE, CONSOLE, everything else unmapped."""
+    """The memory map of spec §2.3: RAM at MEM_BASE, CONSOLE, everything else unmapped.
 
-    def __init__(self, image: dict[int, int] | None = None):
-        self.ram = bytearray(MEM_SIZE_BYTES)
+    `size` is the RAM size in bytes (spec §2.4 MEM_SIZE_BYTES); RISCOF runs use
+    a larger RAM than the 64 KiB default (exec.md M5.3)."""
+
+    def __init__(self, image: dict[int, int] | None = None, size: int = MEM_SIZE_BYTES):
+        self.size = size
+        self.ram = bytearray(size)
         self.console = bytearray()
         # RAM addresses whose fetch reports err (the response still carries
         # the stored word), to check that a faulting fetch has no effect.
@@ -485,9 +489,8 @@ class SimMemory:
         for addr, word in (image or {}).items():
             self.ram[addr - MEM_BASE:addr - MEM_BASE + 4] = word.to_bytes(4, "little")
 
-    @staticmethod
-    def in_ram(addr: int) -> bool:
-        return MEM_BASE <= addr < MEM_BASE + MEM_SIZE_BYTES
+    def in_ram(self, addr: int) -> bool:
+        return MEM_BASE <= addr < MEM_BASE + self.size
 
     @staticmethod
     def is_console(addr: int) -> bool:
@@ -691,7 +694,7 @@ def write_hex(image: dict[int, int], path, per_line: int = 4) -> None:
             lines.append(" ".join(run[i:i + per_line]))
 
     for addr in sorted(image):
-        assert addr % 4 == 0 and SimMemory.in_ram(addr), f"bad image address {addr:#x}"
+        assert addr % 4 == 0 and MEM_BASE <= addr < MEM_BASE + MEM_SIZE_BYTES, f"bad image address {addr:#x}"
         idx = (addr - MEM_BASE) // 4
         if idx != (None if prev is None else prev + 1):
             flush()

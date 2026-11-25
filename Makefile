@@ -53,11 +53,17 @@ LINT_FLAGS      := --lint-only -Wall --quiet $(if $(LINT_TOP),--top-module $(LIN
 SIM_FILELIST := $(ROOT)/sim/sim.f
 SIM_SRCS     := $(addprefix $(ROOT)/,$(shell sed -e 's://.*$$::' -e '/^[[:space:]]*$$/d' $(SIM_FILELIST)))
 SIM_HARNESS  := $(ROOT)/sim/tb_top.cpp
-SIM_DIR      := $(BUILD_DIR)/sim
+# RAM size, given to both the RTL (-G) and the harness's +hex= check (-D).
+# The default (spec §2.4) builds build/sim/; any other size gets its own
+# directory, build/sim-<bytes>/ (RISCOF uses 2 MiB, see tests/riscof/arch_build.py).
+MEM_SIZE_BYTES ?= 65536
+SIM_DIR      := $(BUILD_DIR)/sim$(if $(filter-out 65536,$(MEM_SIZE_BYTES)),-$(MEM_SIZE_BYTES))
 SIM_EXE      := $(SIM_DIR)/Vrv_soc_sim$(if $(filter Windows_NT,$(OS)),.exe)
 # --x-initial unique + the harness's default +verilator+rand+reset+2: state
 # without a reset (the register file) starts random (spec §2.2).
 # VL_USER_STOP/FATAL: tb_top.cpp maps $stop/$fatal/assertions to exit code 6.
+# DPI_DLLISPEC empty: svdpi.h would declare the DPI functions dllimport on
+# Windows, but Verilator links them statically (rv_mem_peek, signature dump).
 # PYTHON3: Verilator's makefile runs a Python helper, and "python3" may be
 # the Windows Store stub.
 # Waves: FST needs liblz4 (MSYS2 package mingw-w64-ucrt-x86_64-lz4, see
@@ -67,12 +73,10 @@ ifeq ($(WAVE_FMT),vcd)
 $(warning lz4.h not found in $(MSYS2_UCRT64)/include: building with VCD waves instead of FST. \
   Install with: pacman -S mingw-w64-ucrt-x86_64-lz4)
 endif
-# RAM size, given to both the RTL (-G) and the harness's +hex= check (-D).
-MEM_SIZE_BYTES ?= 65536
 SIM_FLAGS    := --cc --exe --build -j 0 -Wall --quiet --top-module rv_soc_sim \
                 -GMEM_SIZE_BYTES=$(MEM_SIZE_BYTES) \
                 --timescale 1ns/1ns --assert --x-assign unique --x-initial unique --trace-$(WAVE_FMT) \
-                -CFLAGS "-O2 -DVL_USER_STOP -DVL_USER_FATAL -DMEM_SIZE_BYTES=$(MEM_SIZE_BYTES)" \
+                -CFLAGS "-O2 -DVL_USER_STOP -DVL_USER_FATAL -DMEM_SIZE_BYTES=$(MEM_SIZE_BYTES) -DDPI_DLLISPEC=" \
                 --MAKEFLAGS "PYTHON3=$(PYTHON)" \
                 --Mdir $(SIM_DIR) -o $(notdir $(SIM_EXE))
 # make sim HEX=... options
@@ -124,7 +128,7 @@ sim-test: $(SIM_EXE) ## Check the Verilator harness against the Python model (M3
 	$(PYTHON) $(ROOT)/tb/sim/test_tb_top.py $(SIM_EXE)
 
 # Programs are built by scripts/run_progs.py (one place for the compiler
-# flags, spec �12), which also checks each against its header and the model.
+# flags, spec §12), which also checks each against its header and the model.
 RUN_PROGS := $(PYTHON) $(ROOT)/scripts/run_progs.py --exe $(SIM_EXE)
 
 asm: $(SIM_EXE) ## Build and run the directed tests in sw/asm/ (M3.5): make asm [TESTS="t00 e01"]
@@ -134,7 +138,7 @@ c: $(SIM_EXE) ## Build and run the C programs in sw/c/ (M4): make c [TESTS="hell
 	$(RUN_PROGS) $(if $(TESTS),$(TESTS),sw/c)
 
 progs: $(SIM_EXE) ## Build and run every program in sw/asm/ and sw/c/
-	$(RUN_PROGS)
+	$(RUN_PROGS) asm c
 
 # make sim HEX=<file> [TOHOST=<hex>] [MAX_CYCLES=<n>] [SEED=<n>] [WAVES=1] [RETIRE_LOG=<file>]
 # runs a ready-made image. make sim PROG=sw/asm/<test> or PROG=sw/c/<prog>
@@ -159,17 +163,21 @@ compare: ## RTL vs. Spike lockstep comparison: make compare PROG=<path>
 	$(call need_prog)
 	$(call not_yet,M6.1)
 
-riscv-tests: ## Run the rv32ui-p-* suite (minus waivers)
-	$(call not_yet,M5.1-M5.2)
+riscv-tests: $(SIM_EXE) ## Run the rv32ui-p-* suite; waived tests must fail as tests/riscv-tests-waivers.txt says
+	$(RUN_PROGS) rv32ui
 
-riscof: ## Run riscv-arch-test rv32i_m/I through RISCOF
-	$(call not_yet,M5.3-M5.4)
+# The arch tests need more RAM than the default (tests/riscof/arch_build.py):
+# build a second simulator with 2 MiB, then run RISCOF (DUT: that simulator,
+# reference: the Python model, exec.md §8).
+riscof: ## Run riscv-arch-test rv32i_m/I through RISCOF (DUT vs. the Python reference model)
+	@$(MAKE) --no-print-directory sim-build MEM_SIZE_BYTES=2097152
+	$(PYTHON) $(ROOT)/scripts/run_riscof.py
 
 random: ## Random program tests: make random SEEDS=<n>
 	$(call not_yet,M6.3-M6.4)
 
 regress: lint unit sim-test progs riscv-tests riscof random ## Full regression (filled in at M9.1)
-	@echo "regress: lint, unit, sim-test and progs are implemented; the other stages are placeholders"
+	@echo "regress: lint, unit, sim-test, progs, riscv-tests and riscof are implemented; random is a placeholder (M6)"
 
 syn: ## Yosys synthesis of rv_core
 	$(call not_yet,M8)

@@ -11,6 +11,9 @@ Runs the simulator binary as a user would and checks what it reports:
     plusargs, a malformed hex image;
   - timeout (exit 2) with +max_cycles= and with the default of 1,000,000;
   - +waves writes a wave file and does not change the result;
+  - +signature= (§11): the words in [sig_begin, sig_end) match the model's
+    memory at the end of the run, also after an error stop; bad ranges are
+    harness errors;
   - random reset (§2.2): a register read before it is written gives a value
     that depends on +verilator+seed+, is the same for the same seed, and is 0
     with +verilator+rand+reset+0.
@@ -247,6 +250,47 @@ def check_random_reset():
     print(f"  ok    random reset: seeds 1-4 give {', '.join(f'{v:08x}' for v in seeds.values() if v is not None)}")
 
 
+def check_signature():
+    data = sim_scenarios.DATA
+    cases = [("pass", data - 0x40, data + 0x40), ("pass", 0x8000_0000, 0x8000_0100),
+             ("bus_store_above_ram", 0x8000_0000, 0x8000_0080), ("pass", data, data),
+             ("fail", sim_scenarios.TOHOST, sim_scenarios.TOHOST + 8),
+             ("pass", 0x8001_0000 - 0x20, 0x8001_0000)]
+    for name, lo, hi in cases:
+        sc = sim_scenarios.find(name)
+        args, _ = sc.plusargs(OUT)
+        sig = OUT / f"{name}.sig"
+        sig.unlink(missing_ok=True)
+        r = run(args + [f"+max_cycles={sc.max_cycles}", f"+signature={sig.as_posix()}",
+                        f"+sig_begin={lo:08x}", f"+sig_end={hi:08x}"])
+        exp = model_run(sc.image(), sc.tohost, sc.max_cycles)
+        tag = f"signature {name} [{lo:08x}, {hi:08x})"
+        check(tag, r.code == exp.code, f"exit {r.code}, expected {exp.code}: {r.last_line!r}")
+        got = sig.read_bytes().decode("ascii") if sig.exists() else None
+        check(tag, got == exp.signature(lo, hi), f"got {got!r:.120}")
+
+    sc = sim_scenarios.find("pass")
+    args, _ = sc.plusargs(OUT)
+    sig = (OUT / "x.sig").as_posix()
+    bad = [
+        ("only +signature=", [f"+signature={sig}"]),
+        ("no +sig_end=", [f"+signature={sig}", "+sig_begin=80000000"]),
+        ("no +signature=", ["+sig_begin=80000000", "+sig_end=80000010"]),
+        ("unaligned begin", [f"+signature={sig}", "+sig_begin=80000002", "+sig_end=80000010"]),
+        ("unaligned end", [f"+signature={sig}", "+sig_begin=80000000", "+sig_end=80000011"]),
+        ("begin above end", [f"+signature={sig}", "+sig_begin=80000010", "+sig_end=80000000"]),
+        ("below RAM", [f"+signature={sig}", "+sig_begin=7ffffffc", "+sig_end=80000010"]),
+        ("above RAM", [f"+signature={sig}", "+sig_begin=8000fff0", "+sig_end=80010004"]),
+        ("0x prefix", [f"+signature={sig}", "+sig_begin=0x80000000", "+sig_end=80000010"]),
+        ("not writable", [f"+signature={(OUT / 'no_such_dir' / 's').as_posix()}", "+sig_begin=80000000",
+                          "+sig_end=80000010"]),
+    ]
+    for name, extra in bad:
+        r = run(args + extra)
+        check(f"signature error: {name}", r.code == 5 and r.result == "harness", f"exit {r.code}: {r.last_line!r}")
+    print(f"  ok    signature: {len(cases)} ranges, {len(bad)} bad-argument cases")
+
+
 def main() -> int:
     global EXE
     if len(sys.argv) != 2:
@@ -259,7 +303,7 @@ def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
 
     for fn in (check_scenarios, check_stop_causes_named, check_harness_errors, check_timeout,
-               check_waves, check_random_reset):
+               check_waves, check_signature, check_random_reset):
         print(f"{fn.__name__}:")
         fn()
 

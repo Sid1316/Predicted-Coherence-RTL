@@ -1,16 +1,22 @@
-"""Build and run programs on the RTL: the directed tests in sw/asm/ and the C programs in sw/c/
-(docs/exec.md M3.5, M4; docs/spec.md §11, §12, §15.2).
+"""Build and run programs on the RTL: the directed tests in sw/asm/, the C programs in sw/c/ and
+the riscv-tests rv32ui suite (docs/exec.md M3.5, M4, M5.1-M5.2; docs/spec.md §11, §12, §15).
 
 Usage: run_progs.py --exe <Vrv_soc_sim> [-v] [program ...]
-  program: sw/asm or sw/c (a whole suite), a path to a .S/.c file or a C
-  program directory, or a name / name prefix (t00, e01, hello).
-  Default: every program in both suites.
+  program: a suite (asm, c, rv32ui, or the directory sw/asm, sw/c), a path to
+  a .S/.c file or a C program directory, or a name / name prefix (t00, e01,
+  hello, rv32ui-p-add).
+  Default: every program in all three suites.
 
 Programs:
   - sw/asm/<name>.S: a directed test (sw/asm/test.h), linked alone.
   - sw/c/<name>.c, or a directory sw/c/<name>/ with .c/.S files: a C program,
     linked with sw/common/crt0.S, the rvlib sources in sw/common/lib/ and
     libgcc (software multiply/divide).
+  - tests/riscv-tests/isa/rv32ui/<test>.S, named rv32ui-p-<test>: built with
+    the custom env sw/common/env/p/riscv_test.h (spec §12). Upstream files
+    have no header: each must pass (exit 0), except the tests listed in
+    tests/riscv-tests-waivers.txt, which must end with the result recorded
+    there.
   Both use sw/common/link.ld and the spec §12 flags. Output goes to
   build/<suite>/<name>.{elf,hex,dis,map,retire.log}.
 
@@ -41,6 +47,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 ASM_DIR = ROOT / "sw" / "asm"
 C_DIR = ROOT / "sw" / "c"
+RV32UI_DIR = ROOT / "tests" / "riscv-tests" / "isa" / "rv32ui"
+RV_MACROS = ROOT / "tests" / "riscv-tests" / "isa" / "macros" / "scalar"
+RV_ENV = ROOT / "sw" / "common" / "env" / "p"
+WAIVERS = ROOT / "tests" / "riscv-tests-waivers.txt"
 COMMON = ROOT / "sw" / "common"
 LINK_LD = COMMON / "link.ld"
 BUILD = ROOT / "build"
@@ -72,9 +82,11 @@ class ProgError(Exception):
 @dataclass
 class Prog:
     name: str
-    suite: str                 # "asm" or "c"
+    suite: str                 # "asm", "c" or "rv32ui"
     main: Path                 # source holding the header
     sources: list[Path]
+    expect: dict | None = None # instead of the header (upstream tests)
+    note: str = ""             # shown after the result (e.g. the waiver reason)
 
     @property
     def out(self) -> Path:
@@ -95,21 +107,55 @@ def c_prog(path: Path) -> Prog:
     return Prog(path.stem, "c", path, [path])
 
 
+WAIVER = re.compile(r"(\S+)\s+(\d+)(?:\s+(STOP_[A-Z_]+))?\s+--\s+(.+)")
+
+
+def waivers() -> dict[str, tuple[int, str | None, str]]:
+    out = {}
+    for line in WAIVERS.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        m = WAIVER.fullmatch(line)
+        if not m:
+            raise SystemExit(f"run_progs: bad line in {WAIVERS.name}: {line}")
+        out[m[1]] = (int(m[2]), m[3], m[4])
+    return out
+
+
 def suite(name: str) -> list[Prog]:
     if name == "asm":
         return [Prog(p.stem, "asm", p, [p]) for p in sorted(ASM_DIR.glob("*.S"))]
+    if name == "rv32ui":
+        w = waivers()
+        unknown = set(w) - {p.stem for p in RV32UI_DIR.glob("*.S")}
+        if unknown:
+            raise SystemExit(f"run_progs: {WAIVERS.name} names unknown tests: {', '.join(sorted(unknown))}")
+        progs = []
+        for p in sorted(RV32UI_DIR.glob("*.S")):
+            code, cause, reason = w.get(p.stem, (0, None, ""))
+            exp = {"code": code, "cause": cause, "max_cycles": DEFAULT_MAX_CYCLES}
+            progs.append(Prog(f"rv32ui-p-{p.stem}", "rv32ui", p, [p], exp,
+                              f"(waived: {reason})" if reason else ""))
+        return progs
     progs = [c_prog(p) for p in sorted(C_DIR.glob("*.c"))]
     progs += [c_prog(p) for p in sorted(C_DIR.iterdir())
               if p.is_dir() and any(p.glob("*.c"))]
     return sorted(progs, key=lambda p: p.name)
 
 
+SUITES = ("asm", "c", "rv32ui")
+
+
 def select(args: list[str]) -> list[Prog]:
-    every = suite("asm") + suite("c")
+    every = [g for s in SUITES for g in suite(s)]
     if not args:
         return every
     out: list[Prog] = []
     for a in args:
+        if a in SUITES:
+            out += suite(a)
+            continue
         p = Path(a).resolve() if Path(a).exists() else None
         if p is None and Path(a).with_suffix(".S").exists():
             p = Path(a).with_suffix(".S").resolve()
@@ -119,6 +165,10 @@ def select(args: list[str]) -> list[Prog]:
             out += suite("asm")
         elif p == C_DIR:
             out += suite("c")
+        elif p == RV32UI_DIR:
+            out += suite("rv32ui")
+        elif p is not None and p.suffix == ".S" and p.parent == RV32UI_DIR:
+            out += [g for g in suite("rv32ui") if g.main == p]
         elif p is not None and p.suffix == ".S" and p.parent == ASM_DIR:
             out.append(Prog(p.stem, "asm", p, [p]))
         elif p is not None and (p.suffix == ".c" or p.is_dir()):
@@ -171,6 +221,12 @@ def build(g: Prog) -> tuple[Path, int, str]:
     elf = g.out.with_suffix(".elf")
     if g.suite == "asm":
         cmd = [tool("gcc"), *COMMON_FLAGS, "-I", str(ASM_DIR), *map(str, g.sources)]
+    elif g.suite == "rv32ui":
+        # _zifencei only lets the assembler accept fence.i, so the waived
+        # fence_i test builds and can be shown to stop with STOP_ILLEGAL: the
+        # core itself has no Zifencei (spec §4.2 rule 3).
+        flags = [f if f != "-march=rv32i" else "-march=rv32i_zifencei" for f in COMMON_FLAGS]
+        cmd = [tool("gcc"), *flags, "-I", str(RV_ENV), "-I", str(RV_MACROS), *map(str, g.sources)]
     else:
         lib = sorted((COMMON / "lib").glob("*.c"))
         cmd = [tool("gcc"), *COMMON_FLAGS, *C_FLAGS, str(COMMON / "crt0.S"), *map(str, g.sources),
@@ -192,7 +248,7 @@ def build(g: Prog) -> tuple[Path, int, str]:
 
 def run_prog(g: Prog, exe: Path, verbose: bool, extra: list[str]) -> str:
     """Return the harness result line; raise ProgError on any failed check."""
-    h = header(g.main)
+    h = g.expect if g.expect is not None else header(g.main)
     hexf, tohost, warnings = build(g)
     if warnings:
         print(f"  ----  {g.name}: compiler output:\n{warnings}")
@@ -232,7 +288,7 @@ def run_prog(g: Prog, exe: Path, verbose: bool, extra: list[str]) -> str:
             problems.append(f"retire log has {len(got)} lines, model {len(exp.lines)}")
     if problems:
         raise ProgError(f"{result}\n    " + "\n    ".join(problems))
-    return result.removeprefix("tb_top: ")
+    return result.removeprefix("tb_top: ") + (f"  {g.note}" if g.note else "")
 
 
 def main() -> int:
@@ -243,6 +299,7 @@ def main() -> int:
     ap.add_argument("--seed", type=int, help="+verilator+seed+ for the random register reset")
     ap.add_argument("programs", nargs="*")
     args = ap.parse_args()
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     extra = []
     if args.seed is not None:
         extra.append(f"+verilator+seed+{args.seed}")

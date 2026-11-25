@@ -25,10 +25,16 @@ class ModelResult:
     console: bytes
     tohost: int | None     # tohost word, if it was written
     cause: str             # stop_cause_t name the core latched (STOP_NONE if it did not stop)
+    mem: SimMemory         # memory at the end of the run (for signatures)
+
+    def signature(self, begin: int, end: int) -> str:
+        """The words in [begin, end) as tb_top.cpp writes +signature= (spec §11)."""
+        return "".join(f"{self.mem.word(a):08x}\n" for a in range(begin, end, 4))
 
 
-def model_run(image: dict[int, int] | None, tohost: int | None, max_cycles: int) -> ModelResult:
-    m = CoreModel(SimMemory(image))
+def model_run(image: dict[int, int] | None, tohost: int | None, max_cycles: int,
+              mem_size: int | None = None) -> ModelResult:
+    m = CoreModel(SimMemory(image) if mem_size is None else SimMemory(image, mem_size))
     m.reset()
     lines = []
     for cycle in range(1, max_cycles + 1):
@@ -38,9 +44,9 @@ def model_run(image: dict[int, int] | None, tohost: int | None, max_cycles: int)
         if tohost is not None and r["valid"] and r["mem_wmask"] and r["mem_addr"] == tohost & ~3:
             v = m.mem.word(tohost & ~3)
             return ModelResult(0 if v == 1 else 1, cycle, lines, bytes(m.mem.console), v,
-                               CAUSE_NAMES[m.status])
+                               CAUSE_NAMES[m.status], m.mem)
         if m.halted:
             cause = CAUSE_NAMES[m.status]
             code = 4 if cause in ("STOP_ECALL", "STOP_EBREAK") else 3
-            return ModelResult(code, cycle, lines, bytes(m.mem.console), None, cause)
-    return ModelResult(2, max_cycles, lines, bytes(m.mem.console), None, CAUSE_NAMES[m.status])
+            return ModelResult(code, cycle, lines, bytes(m.mem.console), None, cause, m.mem)
+    return ModelResult(2, max_cycles, lines, bytes(m.mem.console), None, CAUSE_NAMES[m.status], m.mem)

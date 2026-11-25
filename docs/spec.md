@@ -48,6 +48,7 @@ The review was done on 2026-11-25 against the pinned submodules (`tests/riscv-te
 | R-9 | §6.1, §6.8, §9.1, §14.3, §14.4 | Writing `rv_core` (M3.2) needed four details the spec left open: what the datapath sees on a fetch error; whether `rv_lsu.enable_i` blocks a store during reset (§2.2 says no memory writes in reset, but §6.8 gated only on `halted_q` and the fetch error); which retire fields an instruction that reads no register, or that stops, reports; and how simulation-only assertions are written. | On a fetch error (and while idle) the instruction word is forced to 0, so the untrusted word never reaches the datapath, and the retire port shows `insn = 0`. `enable_i` also includes `~rst_i`. `rs1_*`/`rs2_*` are 0 for an operand the instruction does not read (as in RVFI); the `mem_*` fields are 0 for a stopping instruction. Assertion blocks use a plain `always @(posedge clk_i)` under `` `ifndef SYNTHESIS ``. `make lint` now lints with `--top-module rv_core`. |
 | R-10 | §2.2, §11 | Writing the harness (M3.4) needed: an exit code for an RTL assertion or `$fatal` (Verilator's default handler exits with 1, the "tohost fail" code); what makes `+hex=` bad (Verilator's `$readmemh` reads a word such as `ZZZZZZZZ` as random bits without an error); which stream the console and the result use; and the default random-reset seed. | New exit code 6 (simulation error). `+hex=` is required and checked before loading (format, every word inside RAM); a bad image is exit 5. stdout carries only console bytes, unchanged; the harness's result line goes to stderr. Without `+verilator+` plusargs the harness uses `rand+reset+2` and seed 1, so runs are repeatable (N-5). |
 | R-11 | §11, §15.2 | Writing the directed tests (M3.5): `t09`/`t10` were to write `tohost = 1` and then ECALL/EBREAK, expecting exit 0. The harness ends the run when the `tohost` store retires, so the ECALL would never execute and the test would check nothing. The `# expect:` header from §11 is not valid in a preprocessed `.S` file. | `t09`/`t10` execute ECALL/EBREAK without writing `tohost` and expect exit 4 with the stop cause; a fail store follows, so an instruction that does not stop gives exit 1. Headers use `//`. |
+| R-12 | §2.4, §11, §12 | Running riscv-arch-test (M5.3): `jal-01` needs about 1.7 MiB and the branch tests up to 310 KiB, more than the 64 KiB RAM. `arch_test.h`'s `LA()` macro switches on `.option rvc` around its `.align` padding, and with linker relaxation ld fills that padding with `c.nop`, illegal on RV32I. riscv-config requires `misa` to be described as accessible. RISCOF names signatures `<DUT|Reference>-<plugin>.signature`. | `MEM_SIZE_BYTES` stays 64 KiB by default; RISCOF builds a second simulator with 2 MiB (`build/sim-2097152/`), links with `--defsym=__ram_size` (`link.ld` takes the size from it) and runs the model with the same size. Arch tests are built with `-mno-relax`. The ISA YAML describes `misa` (MXL = 1, I) although the core has no CSRs. The harness dumps the signature through a DPI-C read port on `rv_mem_model` (Verilator only). |
 
 ---
 
@@ -779,48 +780,48 @@ Each instruction must be covered by **all three** sources before Phase 1 is done
 
 | Instr | Directed (`sw/asm/`) | riscv-tests (`rv32ui-p-`) | riscv-arch-test (`rv32i_m/I/`) | Covered |
 |---|---|---|---|---|
-| LUI | `t00_lui_addi` | `lui` | `lui-01` | [ ] |
-| AUIPC | `t07_auipc` | `auipc` | `auipc-01` | [ ] |
-| JAL | `t05_jal_jalr` | `jal` | `jal-01` | [ ] |
-| JALR | `t05_jal_jalr` | `jalr` | `jalr-01`, `misalign1-jalr-01` | [ ] |
-| BEQ | `t04_branch` | `beq` | `beq-01` | [ ] |
-| BNE | `t04_branch` | `bne` | `bne-01` | [ ] |
-| BLT | `t04_branch` | `blt` | `blt-01` | [ ] |
-| BGE | `t04_branch` | `bge` | `bge-01` | [ ] |
-| BLTU | `t04_branch` | `bltu` | `bltu-01` | [ ] |
-| BGEU | `t04_branch` | `bgeu` | `bgeu-01` | [ ] |
-| LB | `t03_load_store` | `lb` | `lb-align-01` | [ ] |
-| LH | `t03_load_store` | `lh` | `lh-align-01` | [ ] |
-| LW | `t03_load_store` | `lw` | `lw-align-01` | [ ] |
-| LBU | `t03_load_store` | `lbu` | `lbu-align-01` | [ ] |
-| LHU | `t03_load_store` | `lhu` | `lhu-align-01` | [ ] |
-| SB | `t03_load_store` | `sb` | `sb-align-01` | [ ] |
-| SH | `t03_load_store` | `sh` | `sh-align-01` | [ ] |
-| SW | `t03_load_store` | `sw` | `sw-align-01` | [ ] |
-| ADDI | `t00_lui_addi`, `t01_alu_imm` | `addi` | `addi-01` | [ ] |
-| SLTI | `t01_alu_imm` | `slti` | `slti-01` | [ ] |
-| SLTIU | `t01_alu_imm` | `sltiu` | `sltiu-01` | [ ] |
-| XORI | `t01_alu_imm` | `xori` | `xori-01` | [ ] |
-| ORI | `t01_alu_imm` | `ori` | `ori-01` | [ ] |
-| ANDI | `t01_alu_imm` | `andi` | `andi-01` | [ ] |
-| SLLI | `t01_alu_imm` | `slli` | `slli-01` | [ ] |
-| SRLI | `t01_alu_imm` | `srli` | `srli-01` | [ ] |
-| SRAI | `t01_alu_imm` | `srai` | `srai-01` | [ ] |
-| ADD | `t02_alu_reg` | `add` | `add-01` | [ ] |
-| SUB | `t02_alu_reg` | `sub` | `sub-01` | [ ] |
-| SLL | `t02_alu_reg` | `sll` | `sll-01` | [ ] |
-| SLT | `t02_alu_reg` | `slt` | `slt-01` | [ ] |
-| SLTU | `t02_alu_reg` | `sltu` | `sltu-01` | [ ] |
-| XOR | `t02_alu_reg` | `xor` | `xor-01` | [ ] |
-| SRL | `t02_alu_reg` | `srl` | `srl-01` | [ ] |
-| SRA | `t02_alu_reg` | `sra` | `sra-01` | [ ] |
-| OR | `t02_alu_reg` | `or` | `or-01` | [ ] |
-| AND | `t02_alu_reg` | `and` | `and-01` | [ ] |
-| FENCE | `t08_fence_nop` | — (`fence_i` is Zifencei, waived) | `fence-01` | [ ] |
+| LUI | `t00_lui_addi` | `lui` | `lui-01` | [x] |
+| AUIPC | `t07_auipc` | `auipc` | `auipc-01` | [x] |
+| JAL | `t05_jal_jalr` | `jal` | `jal-01` | [x] |
+| JALR | `t05_jal_jalr` | `jalr` | `jalr-01`, `misalign1-jalr-01` | [x] |
+| BEQ | `t04_branch` | `beq` | `beq-01` | [x] |
+| BNE | `t04_branch` | `bne` | `bne-01` | [x] |
+| BLT | `t04_branch` | `blt` | `blt-01` | [x] |
+| BGE | `t04_branch` | `bge` | `bge-01` | [x] |
+| BLTU | `t04_branch` | `bltu` | `bltu-01` | [x] |
+| BGEU | `t04_branch` | `bgeu` | `bgeu-01` | [x] |
+| LB | `t03_load_store` | `lb` | `lb-align-01` | [x] |
+| LH | `t03_load_store` | `lh` | `lh-align-01` | [x] |
+| LW | `t03_load_store` | `lw` | `lw-align-01` | [x] |
+| LBU | `t03_load_store` | `lbu` | `lbu-align-01` | [x] |
+| LHU | `t03_load_store` | `lhu` | `lhu-align-01` | [x] |
+| SB | `t03_load_store` | `sb` | `sb-align-01` | [x] |
+| SH | `t03_load_store` | `sh` | `sh-align-01` | [x] |
+| SW | `t03_load_store` | `sw` | `sw-align-01` | [x] |
+| ADDI | `t00_lui_addi`, `t01_alu_imm` | `addi` | `addi-01` | [x] |
+| SLTI | `t01_alu_imm` | `slti` | `slti-01` | [x] |
+| SLTIU | `t01_alu_imm` | `sltiu` | `sltiu-01` | [x] |
+| XORI | `t01_alu_imm` | `xori` | `xori-01` | [x] |
+| ORI | `t01_alu_imm` | `ori` | `ori-01` | [x] |
+| ANDI | `t01_alu_imm` | `andi` | `andi-01` | [x] |
+| SLLI | `t01_alu_imm` | `slli` | `slli-01` | [x] |
+| SRLI | `t01_alu_imm` | `srli` | `srli-01` | [x] |
+| SRAI | `t01_alu_imm` | `srai` | `srai-01` | [x] |
+| ADD | `t02_alu_reg` | `add` | `add-01` | [x] |
+| SUB | `t02_alu_reg` | `sub` | `sub-01` | [x] |
+| SLL | `t02_alu_reg` | `sll` | `sll-01` | [x] |
+| SLT | `t02_alu_reg` | `slt` | `slt-01` | [x] |
+| SLTU | `t02_alu_reg` | `sltu` | `sltu-01` | [x] |
+| XOR | `t02_alu_reg` | `xor` | `xor-01` | [x] |
+| SRL | `t02_alu_reg` | `srl` | `srl-01` | [x] |
+| SRA | `t02_alu_reg` | `sra` | `sra-01` | [x] |
+| OR | `t02_alu_reg` | `or` | `or-01` | [x] |
+| AND | `t02_alu_reg` | `and` | `and-01` | [x] |
+| FENCE | `t08_fence_nop` | — (`fence_i` is Zifencei, waived) | `fence-01` | [x] |
 | ECALL | `t09_ecall_halt` | — (`rv32mi-scall` needs CSRs) | — (privilege suite needs CSRs) | [ ] |
 | EBREAK | `t10_ebreak_halt` | — (`rv32mi-sbreak` needs CSRs) | — (privilege suite needs CSRs) | [ ] |
 
-For ECALL and EBREAK, the directed tests plus random-test coverage of the halt path are the full coverage in Phase 1. Upstream coverage arrives with Zicsr in Phase 2.
+For ECALL and EBREAK, the directed tests plus random-test coverage of the halt path are the full coverage in Phase 1. Upstream coverage arrives with Zicsr in Phase 2. Ticked (2026-11-25, M5): every row whose listed sources all pass; FENCE has no riscv-tests source. ECALL/EBREAK wait for the random tests (M6).
 
 Suite totals at the pinned versions:
 - **riscv-tests `rv32ui`:** 42 tests, of which 40 run. The rows above, plus `simple`, `ld_st` and `st_ld`, which aren't tied to one instruction. `ld_st`/`st_ld` use only aligned accesses on RV32; their 64-bit parts are compiled out. Waived: `fence_i` (Zifencei) and `ma_data` (misaligned loads such as `lw` at offset 1, which this core treats as an error).

@@ -14,7 +14,9 @@ ENTRY(_start)
 
 MEMORY
 {
-  RAM (rwx) : ORIGIN = 0x80000000, LENGTH = 64K
+  /* 64 KiB (spec §2.4 MEM_SIZE_BYTES). A larger simulator RAM is selected
+     with -Wl,--defsym=__ram_size=<bytes>; RISCOF runs use 2 MiB. */
+  RAM (rwx) : ORIGIN = 0x80000000, LENGTH = DEFINED(__ram_size) ? __ram_size : 64K
 }
 
 SECTIONS
