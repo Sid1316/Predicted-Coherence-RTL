@@ -93,7 +93,7 @@ define need_prog
 @if [ -z "$(PROG)" ]; then echo "$@: set PROG=<path to program>, e.g. PROG=sw/asm/t00_lui_addi"; exit 2; fi
 endef
 
-.PHONY: help check-env lint unit sim-build sim-test sim spike compare riscv-tests riscof random regress syn clean
+.PHONY: help check-env lint unit sim-build sim-test asm sim spike compare riscv-tests riscof random regress syn clean
 
 help: ## List the targets
 	@echo "Usage: make <target> [VAR=value ...]"
@@ -123,13 +123,20 @@ sim-build: $(SIM_EXE) ## Build the Verilator simulator (build/sim/Vrv_soc_sim)
 sim-test: $(SIM_EXE) ## Check the Verilator harness against the Python model (M3.4)
 	$(PYTHON) $(ROOT)/tb/sim/test_tb_top.py $(SIM_EXE)
 
+asm: $(SIM_EXE) ## Build and run the directed tests in sw/asm/ (M3.5): make asm [TESTS="t00 e01"]
+	$(PYTHON) $(ROOT)/scripts/run_asm.py --exe $(SIM_EXE) $(TESTS)
+
 # make sim HEX=<file> [TOHOST=<hex>] [MAX_CYCLES=<n>] [SEED=<n>] [WAVES=1] [RETIRE_LOG=<file>]
-# runs a ready-made image; PROG= (build from source first) arrives with M4.
-sim: ## Run one program on the RTL: make sim HEX=<file> [TOHOST=<hex addr>] (PROG=<path> from M4)
+# runs a ready-made image. make sim PROG=sw/asm/<test> builds and checks one
+# directed test (build/asm/<test>.*); C programs (sw/c/) arrive with M4.
+sim: ## Run one program on the RTL: make sim HEX=<file> [TOHOST=<hex addr>] or PROG=sw/asm/<test>
 ifneq ($(HEX),)
 	@$(MAKE) --no-print-directory sim-build
 	$(SIM_EXE) +hex=$(HEX) $(if $(TOHOST),+tohost=$(TOHOST)) $(if $(MAX_CYCLES),+max_cycles=$(MAX_CYCLES)) \
 	  +retire_log=$(RETIRE_LOG) $(if $(WAVES),+waves=$(SIM_DIR)/waves.$(WAVE_FMT)) $(if $(SEED),+verilator+seed+$(SEED))
+else ifneq ($(filter sw/asm/%,$(PROG)),)
+	@$(MAKE) --no-print-directory sim-build
+	$(PYTHON) $(ROOT)/scripts/run_asm.py --exe $(SIM_EXE) -v $(PROG)
 else
 	$(call need_prog)
 	$(call not_yet,M4)
@@ -152,8 +159,8 @@ riscof: ## Run riscv-arch-test rv32i_m/I through RISCOF
 random: ## Random program tests: make random SEEDS=<n>
 	$(call not_yet,M6.3-M6.4)
 
-regress: lint unit sim-test riscv-tests riscof random ## Full regression (filled in at M9.1)
-	@echo "regress: lint, unit and sim-test are implemented; the other stages are placeholders"
+regress: lint unit sim-test asm riscv-tests riscof random ## Full regression (filled in at M9.1)
+	@echo "regress: lint, unit, sim-test and asm are implemented; the other stages are placeholders"
 
 syn: ## Yosys synthesis of rv_core
 	$(call not_yet,M8)

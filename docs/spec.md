@@ -47,6 +47,7 @@ The review was done on 2026-11-25 against the pinned submodules (`tests/riscv-te
 | R-8 | §6.2 | exec.md M3.1 has `rv_pc` choose the next PC and detect misaligned targets, but §6.2 gave it only a `next_pc_i` input, leaving §5.2 in `rv_core` where it could not be unit-tested. | `rv_pc` now holds all of §5.2: new inputs for the control bits, branch result and target, new outputs `next_pc_o` and `misaligned_fetch_o`. Behaviour unchanged. |
 | R-9 | §6.1, §6.8, §9.1, §14.3, §14.4 | Writing `rv_core` (M3.2) needed four details the spec left open: what the datapath sees on a fetch error; whether `rv_lsu.enable_i` blocks a store during reset (§2.2 says no memory writes in reset, but §6.8 gated only on `halted_q` and the fetch error); which retire fields an instruction that reads no register, or that stops, reports; and how simulation-only assertions are written. | On a fetch error (and while idle) the instruction word is forced to 0, so the untrusted word never reaches the datapath, and the retire port shows `insn = 0`. `enable_i` also includes `~rst_i`. `rs1_*`/`rs2_*` are 0 for an operand the instruction does not read (as in RVFI); the `mem_*` fields are 0 for a stopping instruction. Assertion blocks use a plain `always @(posedge clk_i)` under `` `ifndef SYNTHESIS ``. `make lint` now lints with `--top-module rv_core`. |
 | R-10 | §2.2, §11 | Writing the harness (M3.4) needed: an exit code for an RTL assertion or `$fatal` (Verilator's default handler exits with 1, the "tohost fail" code); what makes `+hex=` bad (Verilator's `$readmemh` reads a word such as `ZZZZZZZZ` as random bits without an error); which stream the console and the result use; and the default random-reset seed. | New exit code 6 (simulation error). `+hex=` is required and checked before loading (format, every word inside RAM); a bad image is exit 5. stdout carries only console bytes, unchanged; the harness's result line goes to stderr. Without `+verilator+` plusargs the harness uses `rand+reset+2` and seed 1, so runs are repeatable (N-5). |
+| R-11 | §11, §15.2 | Writing the directed tests (M3.5): `t09`/`t10` were to write `tohost = 1` and then ECALL/EBREAK, expecting exit 0. The harness ends the run when the `tohost` store retires, so the ECALL would never execute and the test would check nothing. The `# expect:` header from §11 is not valid in a preprocessed `.S` file. | `t09`/`t10` execute ECALL/EBREAK without writing `tohost` and expect exit 4 with the stop cause; a fail store follows, so an instruction that does not stop gives exit 1. Headers use `//`. |
 
 ---
 
@@ -681,7 +682,7 @@ If several conditions apply in one cycle, `status_o` records the highest-priorit
 | 5 | Harness error (missing or malformed file, bad plusarg) |
 | 6 | Simulation error: an RTL assertion, `$error`/`$stop`/`$fatal`, or a Verilator runtime error once the run has started |
 
-Negative tests (exec.md M3, the `e*` tests in §15.2) declare their expected exit code and cause in a header comment, e.g. `# expect: 3 STOP_ILLEGAL`. The runner checks it.
+Every directed test (§15.2) declares its expected exit code, and for a stop its cause, in a header comment, e.g. `// expect: 3 STOP_ILLEGAL`; `// console: <text>` adds the expected console output. The runner checks both. (`.S` files go through the C preprocessor, which rejects a line starting with `#` that is not a directive, so the tests use `//`; the runner accepts `#` as well.)
 
 ---
 
@@ -838,17 +839,17 @@ Suite totals at the pinned versions:
 | `t06_x0` | Writes to `x0` from every write-capable class are discarded | pass |
 | `t07_auipc` | AUIPC at different PCs, used for PC-relative addressing | pass |
 | `t08_fence_nop` | FENCE, FENCE.TSO, PAUSE encodings change nothing | pass |
-| `t09_ecall_halt` | Write `tohost = 1`, then ECALL; nothing after it executes | pass (exit 0) |
-| `t10_ebreak_halt` | Same with EBREAK | pass (exit 0) |
-| `e01_illegal` | All-zero word, a CSR instruction, a bad funct7, an `M`-extension op | exit 3, `STOP_ILLEGAL` |
-| `e02_misaligned_load` | `LW` at offset 2, `LH` at offset 1 | exit 3, `STOP_MISALIGNED_DATA` |
+| `t09_ecall_halt` | ECALL with no `tohost` write before it; a fail store after it must not execute | exit 4, `STOP_ECALL` |
+| `t10_ebreak_halt` | Same with EBREAK | exit 4, `STOP_EBREAK` |
+| `e01a`–`e01d` | All-zero word, a CSR instruction, a bad funct7, an `M`-extension op (one file each) | exit 3, `STOP_ILLEGAL` |
+| `e02a`, `e02b` | `LW` at offset 2, `LH` at offset 1 | exit 3, `STOP_MISALIGNED_DATA` |
 | `e03_misaligned_store` | `SW` at offset 1 | exit 3, `STOP_MISALIGNED_DATA` |
 | `e04_misaligned_jump` | `JALR` to an address with bit 1 set; a not-taken branch to a misaligned target, and a `JALR` whose target has only bit 0 set, must **not** stop | exit 3, `STOP_MISALIGNED_FETCH` |
 | `e05_bus_error` | Load from `0x0000_0000` | exit 3, `STOP_BUS_ERROR` |
 | `e06_ifetch_error` | JALR to an address outside RAM | exit 3, `STOP_IFETCH_ERROR` |
 | `t11_console` | Write a string to `CONSOLE` | pass; harness output matches the expected string |
 
-Each error test (`e*`) contains exactly one stopping instruction. Variants of a case (e.g. `LW` vs. `LH`) are separate files named `e02a_`, `e02b_`, ….
+Each error test (`e*`) contains exactly one stopping instruction, followed by a fail store to `tohost`, so a core that does not stop there fails the test (exit 1) instead of passing it. Variants of a case (e.g. `LW` vs. `LH`) are separate files named `e02a_`, `e02b_`, …. The macros are in `sw/asm/test.h`; `make asm` (`scripts/run_asm.py`) builds and runs them and also compares each retire log with the Python model.
 
 ---
 

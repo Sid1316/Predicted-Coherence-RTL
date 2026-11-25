@@ -28,9 +28,10 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tb" / "unit"))
 
 import sim_scenarios  # noqa: E402
-from rv_model import (  # noqa: E402
-    STOP_CAUSES, CoreModel, SimMemory, retire_log_line, write_hex,
-)
+from rv_model import STOP_CAUSES, write_hex  # noqa: E402
+
+sys.path.insert(0, str(ROOT / "tb" / "sim"))
+from harness_model import model_run  # noqa: E402
 from rv_progs import Prog  # noqa: E402
 
 OUT = ROOT / "build" / "sim" / "test"
@@ -80,24 +81,6 @@ def check(name: str, cond: bool, msg: str = ""):
         print(f"  FAIL  {name}: {msg}")
 
 
-def model_run(image, tohost, max_cycles):
-    """What the harness should report: (exit code, cycles, log lines, console bytes, tohost value)."""
-    m = CoreModel(SimMemory(image))
-    m.reset()
-    lines = []
-    for cycle in range(1, max_cycles + 1):
-        r = m.step()
-        if r["valid"]:
-            lines.append(retire_log_line(r, m.status))
-        if tohost is not None and r["valid"] and r["mem_wmask"] and r["mem_addr"] == tohost & ~3:
-            v = m.mem.word(tohost & ~3)
-            return (0 if v == 1 else 1), cycle, lines, bytes(m.mem.console), v
-        if m.halted:
-            code = 4 if CAUSE_NAMES[m.status] in ("STOP_ECALL", "STOP_EBREAK") else 3
-            return code, cycle, lines, bytes(m.mem.console), None
-    return 2, max_cycles, lines, bytes(m.mem.console), None
-
-
 def write_image(name: str, image: dict[int, int]) -> Path:
     path = OUT / f"{name}.hex"
     write_hex(image, path)
@@ -124,7 +107,8 @@ def check_scenarios():
             continue
         args.append(f"+max_cycles={sc.max_cycles}")
         r = run(args)
-        code, cycles, lines, console, tohost = model_run(sc.image(), sc.tohost, sc.max_cycles)
+        exp = model_run(sc.image(), sc.tohost, sc.max_cycles)
+        code, cycles, lines, console, tohost = exp.code, exp.cycles, exp.lines, exp.console, exp.tohost
         check(name, r.summary is not None, f"no result line in stderr: {r.stderr!r}")
         check(name, r.code == code, f"exit {r.code}, expected {code} ({r.last_line})")
         check(name, r.cycles == cycles, f"cycles={r.cycles}, expected {cycles}")
