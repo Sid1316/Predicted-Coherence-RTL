@@ -1,0 +1,22 @@
+
+3. Printing statistics.
+
+=== rv_core ===
+
+        +----------Local Count, excluding submodules.
+        | 
+     2280 wires
+     5651 wire bits
+     2280 public wires
+     5651 public wire bits
+        9 ports
+      555 port bits
+     3137 cells
+        7   $scopeinfo
+       95   CCU2C
+      223   L6MUX21
+     2163   LUT4
+      517   PFUMX
+       32   TRELLIS_DPR16X4
+      100   TRELLIS_FF
+

@@ -74,3 +74,52 @@ Whole program, every retired instruction; from `scripts/stats.py --bench --markd
 - **RAW at distance 1** covers 11–66% of instructions (66% in crc32's tight loop), distance 2 a further 8–17%, distance 3 5–24%. Without forwarding, most instructions would wait.
 - **Branches:** backward branches are taken 62–100% of the time, forward ones 18–62%. Static backward-taken / forward-not-taken prediction (BTFN) fits most of these programs, though CoreMark and `ud` have many forward branches that are taken.
 - **Footprint:** code 8.7–19 KB, data up to 12.6 KB, stack up to 7.8 KB. Every program fits easily in the 64 KiB RAM, which is relevant for TCM vs. cache sizing.
+
+## M8: Synthesis characterization
+
+### Setup
+
+| Item | Value |
+|---|---|
+| Device | Lattice ECP5 LFE5U-25F, CABGA256, speed grade 6 |
+| Flow | sv2v 0.0.13 (SystemVerilog to Verilog, `SYNTHESIS` defined) → Yosys 0.66 `synth_ecp5` → nextpnr-ecp5 0.7, 3 placement seeds |
+| Reproduce | `make syn` (`scripts/syn.py`); full report and tool logs in `syn/reports/` |
+| Harnesses | `syn/rv_timing_core.sv`: rv_core alone; memory responses come from flops and outputs go into flops, so every path is register to register. `syn/rv_timing_soc.sv`: rv_core plus 1 KiB instruction and 1 KiB data memory with the zero-latency combinational read of spec §8.3, so the whole single-cycle loop is timed. Both reach the pins through a shift register and an XOR tree, which adds a little area and depth. |
+
+### M8.1–M8.2 Area and Fmax
+
+rv_core alone, Yosys pre-pack: 2,163 LUT4, 517 PFUMX, 223 L6MUX21, 95 CCU2C, 100 flip-flops and 32 TRELLIS_DPR16X4. The flip-flops are `pc_q` (32), `order_q` (64), `halted_q` and `status_q` (4). The register file maps to distributed RAM: 32 entries × 32 bits × 2 read ports = 32 DPR16X4, not 992 flops. The largest blocks by their own cells are the ALU (745 LUT4, mostly its shifters), rv_core's own glue and retire port (838), and the register file's read muxes (266).
+
+| Variant | TRELLIS_COMB (post-pack) | Flip-flops | LUT RAM | Block RAM | Fmax (best of 3 seeds) |
+|---|---:|---:|---:|---:|---:|
+| core (rv_core alone, harness included) | 2,203 (9 %) | 651 | 32 | 0 | **41.3 MHz** |
+| soc_bram (instruction memory in block RAM) | 3,556 (14 %) | 626 | 160 | 1 | **28.7 MHz** |
+| soc_lutram (both memories in LUT RAM) | 5,362 (22 %) | 625 | 288 | 0 | **30.3 MHz** |
+
+Most of the flip-flops in this table belong to the harnesses' input and output registers.
+
+### Critical path by stage
+
+Taken from hierarchical netlists, so that every cell keeps its module name. Those netlists are not optimized across module boundaries and run slower (29.0 and 25.8 MHz), so the table shows where the delay is, not the achievable clock. About 70 % of the delay is routing.
+
+| Stage | core: rv_core alone (34.4 ns) | soc_lutram: whole loop (38.8 ns) |
+|---|---:|---:|
+| Fetch: instruction memory and read mux | n/a | 6.6 ns (17 %) |
+| Fetch: fetch-error gating, `active` | 5.8 ns (17 %) | 2.2 ns (6 %) |
+| Decode + immediate | 7.3 ns (21 %) | 6.5 ns (17 %) |
+| Operand select | 1.4 ns (4 %) | 2.0 ns (5 %) |
+| ALU (adder carry chain) | 7.4 ns (22 %) | 6.9 ns (18 %) |
+| Memory: data memory and read mux | n/a | 7.0 ns (18 %) |
+| Memory: load/store unit | 4.0 ns (12 %) | 3.4 ns (9 %) |
+| Stop logic → next-PC (core) / write-back mux → register file and retire port (soc) | 8.5 ns (25 %) | 4.2 ns (11 %) |
+
+- **The whole loop (soc_lutram)** runs from an instruction-memory read through decode, the ALU address add, the data-memory read and load alignment to the register-file write. The two memory reads together take 35 % of the cycle.
+- **rv_core alone (core)** has a different slowest path, the stop condition. A misaligned data address computed by the ALU must stop the core in the same cycle (spec §10), which holds the PC. So LSU misalignment detection, the stop-cause priority logic and the next-PC mux are in series behind the ALU.
+
+### M8.3 The memory finding
+
+ECP5 block RAM (DP16KD) reads synchronously: the data appears one clock after the address. The Phase 1 core expects zero-latency reads (spec §8.3). What this means:
+
+- **Instruction memory can use block RAM even in a single-cycle core.** The fetch address is `pc_q`, a register, so the block RAM's address register can be the PC itself: the RAM latches `next_pc` at the clock edge and delivers the instruction in the next cycle. Yosys did this transform without being asked (soc_bram: 1 DP16KD). It saves 1,806 slices against LUT RAM, but does not raise Fmax: the block RAM's 5.8 ns clock-to-out costs about what the LUT-RAM read and its mux do.
+- **Data memory cannot.** Its address comes from the ALU in the same cycle, so the read needs a second clock. With block RAM, a load must either take two cycles (a stall, CPI > 1) or move into a pipeline stage. The only same-cycle option is LUT RAM: 128 DPR16X4 per KiB here, so only small memories are practical.
+- **Phase 2 input:** a 2-stage design (fetch / execute) can keep instruction fetch in block RAM with no extra latency, and gets the data side through a memory stage or a load stall. That moves the data-memory read (18 % of today's loop) out of the critical path. The `rv_core` memory ports (spec §8.3, §16) already have the `ready` and latency hooks for this.

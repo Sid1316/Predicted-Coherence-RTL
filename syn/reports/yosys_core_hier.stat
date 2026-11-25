@@ -1,0 +1,189 @@
+
+3. Printing statistics.
+
+=== $paramod\rv_pc\RESET_PC=32'10000000000000000000000000000000 ===
+
+        +----------Local Count, excluding submodules.
+        | 
+       91 wires
+      285 wire bits
+       91 public wires
+      285 public wire bits
+       13 ports
+      137 port bits
+      143 cells
+       15   CCU2C
+       68   LUT4
+       28   PFUMX
+       32   TRELLIS_FF
+
+=== rv_alu ===
+
+        +----------Local Count, excluding submodules.
+        | 
+      880 wires
+     1702 wire bits
+      880 public wires
+     1702 public wire bits
+        4 ports
+      100 port bits
+     1098 cells
+       32   CCU2C
+       84   L6MUX21
+      745   LUT4
+      237   PFUMX
+
+=== rv_branch_unit ===
+
+        +----------Local Count, excluding submodules.
+        | 
+      127 wires
+      235 wire bits
+      127 public wires
+      235 public wire bits
+        4 ports
+       68 port bits
+      111 cells
+       15   CCU2C
+       13   L6MUX21
+       61   LUT4
+       22   PFUMX
+
+=== rv_core ===
+
+        +----------Local Count, excluding submodules.
+        | 
+      682 wires
+     2179 wire bits
+      682 public wires
+     2179 public wire bits
+        9 ports
+      555 port bits
+     1191 cells
+       32   CCU2C
+       40   L6MUX21
+      838   LUT4
+      213   PFUMX
+       68   TRELLIS_FF
+        7 submodules
+        1   $paramod\rv_pc\RESET_PC=32'10000000000000000000000000000000
+        1   rv_alu
+        1   rv_branch_unit
+        1   rv_decoder
+        1   rv_imm_gen
+        1   rv_lsu
+        1   rv_regfile
+
+=== rv_decoder ===
+
+        +----------Local Count, excluding submodules.
+        | 
+      278 wires
+      532 wire bits
+      278 public wires
+      532 public wire bits
+        5 ports
+       75 port bits
+      311 cells
+       41   L6MUX21
+      195   LUT4
+       75   PFUMX
+
+=== rv_imm_gen ===
+
+        +----------Local Count, excluding submodules.
+        | 
+       58 wires
+      122 wire bits
+       58 public wires
+      122 public wire bits
+        3 ports
+       67 port bits
+       86 cells
+        1   L6MUX21
+       59   LUT4
+       26   PFUMX
+
+=== rv_lsu ===
+
+        +----------Local Count, excluding submodules.
+        | 
+      165 wires
+      518 wire bits
+      165 public wires
+      518 public wire bits
+        9 ports
+      231 port bits
+      226 cells
+       11   L6MUX21
+      161   LUT4
+       54   PFUMX
+
+=== rv_regfile ===
+
+        +----------Local Count, excluding submodules.
+        | 
+      469 wires
+      895 wire bits
+      469 public wires
+      895 public wire bits
+        8 ports
+      113 port bits
+      496 cells
+       66   L6MUX21
+      266   LUT4
+      132   PFUMX
+       32   TRELLIS_DPR16X4
+
+=== rv_timing_core ===
+
+        +----------Local Count, excluding submodules.
+        | 
+      129 wires
+     1418 wire bits
+      129 public wires
+     1418 public wire bits
+        4 ports
+        4 port bits
+      765 cells
+      181   LUT4
+       29   PFUMX
+      555   TRELLIS_FF
+        1 submodules
+        1   rv_core
+
+=== design hierarchy ===
+
+        +----------Count including submodules.
+        | 
+     4427 rv_timing_core
+     1191 rv_core
+      143   $paramod\rv_pc\RESET_PC=32'10000000000000000000000000000000
+     1098   rv_alu
+      111   rv_branch_unit
+      311   rv_decoder
+       86   rv_imm_gen
+      226   rv_lsu
+      496   rv_regfile
+
+        +----------Count including submodules.
+        | 
+     2879 wires
+     7886 wire bits
+     2879 public wires
+     7886 public wire bits
+       59 ports
+     1350 port bits
+        - memories
+        - memory bits
+        - processes
+     4427 cells
+       94   CCU2C
+      256   L6MUX21
+     2574   LUT4
+      816   PFUMX
+       32   TRELLIS_DPR16X4
+      655   TRELLIS_FF
+        1 submodules
+        1   rv_core
+

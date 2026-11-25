@@ -1,0 +1,23 @@
+
+4. Printing statistics.
+
+=== rv_timing_soc ===
+
+        +----------Local Count, excluding submodules.
+        | 
+     2677 wires
+     8433 wire bits
+     2677 public wires
+     8433 public wire bits
+        4 ports
+        4 port bits
+     4034 cells
+        8   $scopeinfo
+       95   CCU2C
+        1   DP16KD
+      195   L6MUX21
+     2382   LUT4
+      567   PFUMX
+      160   TRELLIS_DPR16X4
+      626   TRELLIS_FF
+

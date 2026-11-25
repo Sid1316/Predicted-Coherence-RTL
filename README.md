@@ -49,7 +49,8 @@ Steps:
 2. Open the **MSYS2 UCRT64** shell from the Start menu and install the hardware tools:
    ```bash
    pacman -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-verilator \
-       mingw-w64-ucrt-x86_64-yosys mingw-w64-ucrt-x86_64-iverilog mingw-w64-ucrt-x86_64-gtkwave \n       mingw-w64-ucrt-x86_64-lz4
+       mingw-w64-ucrt-x86_64-yosys mingw-w64-ucrt-x86_64-iverilog mingw-w64-ucrt-x86_64-gtkwave \
+       mingw-w64-ucrt-x86_64-lz4 mingw-w64-ucrt-x86_64-nextpnr mingw-w64-ucrt-x86_64-prjtrellis
    ```
    `lz4` is what Verilator needs for FST waveforms; without it `make sim-build` falls back to VCD and prints a warning. Also install `mingw-w64-ucrt-x86_64-perl`. Then add `C:\msys64\ucrt64\bin` to your user `PATH`. Add only that folder, **not** `C:\msys64\usr\bin`, which would clash with Git Bash.
 
@@ -57,6 +58,10 @@ Steps:
    ```bash
    VERILATOR_ROOT=C:/msys64/ucrt64/share/verilator C:/msys64/ucrt64/bin/verilator_bin.exe --version
    ```
+   `nextpnr` and `prjtrellis` are only needed for `make syn` (M8).
+
+   For `make syn`, also get [sv2v](https://github.com/zachjs/sv2v/releases) v0.0.13 (`sv2v-Windows.zip`) and extract it to `%LOCALAPPDATA%\Programs\sv2v-0.0.13\` (or point `SV2V=` at `sv2v.exe`): yosys's own SystemVerilog frontend cannot read the RTL's package types in port lists.
+
 3. Extract the xPack RISC-V GCC zip to `%LOCALAPPDATA%\Programs\` and add its `bin` folder to your user `PATH`. This machine uses version 15.2.0-1 at `%LOCALAPPDATA%\Programs\xpack-riscv-none-elf-gcc-15.2.0-1\bin`.
 4. In Git Bash, in the repo root, create a Python virtual environment and install cocotb:
    ```bash
@@ -102,5 +107,5 @@ Run `make help` for the current list. Targets marked *not implemented* print the
 | `make riscof` | M5 | riscv-arch-test `rv32i_m/I` (39 tests) via RISCOF: DUT on a 2 MiB-RAM simulator (`build/sim-2097152/`) vs. the Python reference model |
 | `make random [SEEDS=200] [START=1]` | M6 | Random programs (`scripts/randgen.py`) on the RTL vs. the Python reference model, trace by trace; failing seeds are saved in `tests/random/`; prints instruction and stop-cause coverage |
 | `make regress` | M9 | Everything, in order |
-| `make syn` | M8 | Yosys synthesis |
+| `make syn [SYN_SEEDS=3]` | M8 | sv2v + Yosys + nextpnr-ecp5: area, Fmax and critical path by stage of `rv_core`; report in `syn/reports/summary.md` |
 | `make clean` | M0 | Remove build output |

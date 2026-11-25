@@ -193,8 +193,11 @@ random: $(SIM_EXE) ## Random programs vs. the reference model: make random [SEED
 regress: lint unit sim-test progs riscv-tests riscof random bench ## Full regression (filled in at M9.1)
 	@echo "regress: all stages passed (random: $(SEEDS) seeds from $(START))"
 
-syn: ## Yosys synthesis of rv_core
-	$(call not_yet,M8)
+# Synthesis characterization (M8): sv2v -> yosys synth_ecp5 -> nextpnr-ecp5,
+# report in syn/reports/. Needs sv2v (SV2V=...) and MSYS2's yosys and nextpnr.
+SYN_SEEDS ?= 3
+syn: ## Yosys + nextpnr (ECP5) area, Fmax and critical path of rv_core: make syn [SYN_SEEDS=3]
+	$(PYTHON) $(ROOT)/scripts/syn.py --seeds $(SYN_SEEDS)
 
 clean: ## Remove build output
 	rm -rf $(BUILD_DIR) $(ROOT)/obj_dir

@@ -212,11 +212,13 @@ Each block gets a cocotb test in `tb/unit/test_<block>.py`, with randomized chec
 **Status: done (2026-11-25).** `make bench` runs Dhrystone 2.2, CoreMark 1.01 and five Embench 1.0 programs (crc32, huffbench, nettle-sha256, statemate, ud). Each passes its own result check and matches the reference model trace. Baseline: 1.03 DMIPS/MHz, 1.39 CoreMark/MHz. Stats are in `docs/phase1-report.md`. Timing uses a new sim-only `CYCLE` MMIO counter, since the core has no CSRs (spec R-13). The Embench subset leaves out `edn` and `matmult-int`: more than 30M cycles with software multiply, too slow to replay on the Python model (about 50k instructions/s).
 
 ### M8: Synthesis characterization (S–M)
-- [ ] **M8.1** Yosys synthesis of `rv_core` alone, with memories outside the core as top-level ports, for one FPGA family (e.g. Lattice ECP5 via nextpnr, or Xilinx 7-series via Vivado if available).
-- [ ] **M8.2** Report LUTs, FFs, Fmax and the **critical path broken down by stage** (fetch → decode → regfile → ALU → memory → writeback).
-- [ ] **M8.3** Note the **memory finding**: FPGA block RAMs have synchronous reads, which a single-cycle core with combinational reads can't use directly. Record what this means for Phase 2.
+- [x] **M8.1** Yosys synthesis of `rv_core` alone, with memories outside the core as top-level ports, for one FPGA family (e.g. Lattice ECP5 via nextpnr, or Xilinx 7-series via Vivado if available).
+- [x] **M8.2** Report LUTs, FFs, Fmax and the **critical path broken down by stage** (fetch → decode → regfile → ALU → memory → writeback).
+- [x] **M8.3** Note the **memory finding**: FPGA block RAMs have synchronous reads, which a single-cycle core with combinational reads can't use directly. Record what this means for Phase 2.
 
 **Exit criteria:** synthesis runs from `make syn`; the report is in `syn/reports/` and summarized in `phase1-report.md`.
+
+**Status: done (2026-11-25).** `make syn`: sv2v 0.0.13, then Yosys 0.66, then nextpnr-ecp5 0.7 on an LFE5U-25F (speed grade 6). rv_core alone: 2,163 LUT4 pre-pack, 100 flip-flops, register file in LUT RAM, 41.3 MHz. The whole single-cycle loop with 1 KiB LUT-RAM memories runs at 30.3 MHz; its critical path is about 35 % memory reads, 18 % ALU and 17 % decode. Memory finding (M8.3): instruction fetch can use block RAM, because the PC acts as the RAM's address register; the data memory cannot. Details in `docs/phase1-report.md` and `syn/reports/summary.md`.
 
 ### M9: Phase 1 closeout (S)
 - [ ] **M9.1** `make regress` runs, in one command: lint, unit tests, directed asm, `rv32ui`, RISCOF, lockstep on all programs, and a fixed set of random seeds.

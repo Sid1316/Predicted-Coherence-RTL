@@ -108,7 +108,10 @@ is only needed for running pip or python by hand.
 -----------------
 
   GTKWave          3.3.128   installed (MSYS2); waveform viewer
-  nextpnr-ecp5     -         not installed; FPGA timing for M8
+  nextpnr-ecp5     0.7       MSYS2 package mingw-w64-ucrt-x86_64-nextpnr (+ prjtrellis); FPGA timing for M8
+  sv2v             0.0.13    prebuilt sv2v-Windows.zip from github.com/zachjs/sv2v, in
+                             %LOCALAPPDATA%\Programs\sv2v-0.0.13\ (zip sha256 5fd5ae5177d88999e333db21cdfa1796e60e557586df10bc0bdd378b94e9eb71);
+                             SystemVerilog -> Verilog for yosys (make syn)
   Verible          -         not installed; SystemVerilog formatter
   Surfer           -         not installed; alternative waveform viewer
   Sail RISC-V      -         not installed; possible RISCOF reference model
