@@ -849,7 +849,7 @@ Suite totals at the pinned versions:
 | `e06_ifetch_error` | JALR to an address outside RAM | exit 3, `STOP_IFETCH_ERROR` |
 | `t11_console` | Write a string to `CONSOLE` | pass; harness output matches the expected string |
 
-Each error test (`e*`) contains exactly one stopping instruction, followed by a fail store to `tohost`, so a core that does not stop there fails the test (exit 1) instead of passing it. Variants of a case (e.g. `LW` vs. `LH`) are separate files named `e02a_`, `e02b_`, …. The macros are in `sw/asm/test.h`; `make asm` (`scripts/run_asm.py`) builds and runs them and also compares each retire log with the Python model.
+Each error test (`e*`) contains exactly one stopping instruction, followed by a fail store to `tohost`, so a core that does not stop there fails the test (exit 1) instead of passing it. Variants of a case (e.g. `LW` vs. `LH`) are separate files named `e02a_`, `e02b_`, …. The macros are in `sw/asm/test.h`; `make asm` (`scripts/run_progs.py`) builds and runs them and also compares each retire log with the Python model.
 
 ---
 

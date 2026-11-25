@@ -3,7 +3,7 @@
 model_run() steps rv_model.CoreModel the way the harness clocks rv_soc_sim:
 the run ends at the cycle a store to tohost retires, the cycle the core
 stops, or after max_cycles. Shared by tb/sim/test_tb_top.py and
-scripts/run_asm.py.
+scripts/run_progs.py.
 """
 
 import sys

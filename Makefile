@@ -90,10 +90,10 @@ endef
 
 # $(call need_prog)
 define need_prog
-@if [ -z "$(PROG)" ]; then echo "$@: set PROG=<path to program>, e.g. PROG=sw/asm/t00_lui_addi"; exit 2; fi
+@if [ -z "$(PROG)" ]; then echo "$@: set PROG=<path to program>, e.g. PROG=sw/c/hello or PROG=sw/asm/t00_lui_addi"; exit 2; fi
 endef
 
-.PHONY: help check-env lint unit sim-build sim-test asm sim spike compare riscv-tests riscof random regress syn clean
+.PHONY: help check-env lint unit sim-build sim-test asm c progs sim spike compare riscv-tests riscof random regress syn clean
 
 help: ## List the targets
 	@echo "Usage: make <target> [VAR=value ...]"
@@ -123,23 +123,32 @@ sim-build: $(SIM_EXE) ## Build the Verilator simulator (build/sim/Vrv_soc_sim)
 sim-test: $(SIM_EXE) ## Check the Verilator harness against the Python model (M3.4)
 	$(PYTHON) $(ROOT)/tb/sim/test_tb_top.py $(SIM_EXE)
 
+# Programs are built by scripts/run_progs.py (one place for the compiler
+# flags, spec §12), which also checks each against its header and the model.
+RUN_PROGS := $(PYTHON) $(ROOT)/scripts/run_progs.py --exe $(SIM_EXE)
+
 asm: $(SIM_EXE) ## Build and run the directed tests in sw/asm/ (M3.5): make asm [TESTS="t00 e01"]
-	$(PYTHON) $(ROOT)/scripts/run_asm.py --exe $(SIM_EXE) $(TESTS)
+	$(RUN_PROGS) $(if $(TESTS),$(TESTS),sw/asm)
+
+c: $(SIM_EXE) ## Build and run the C programs in sw/c/ (M4): make c [TESTS="hello"]
+	$(RUN_PROGS) $(if $(TESTS),$(TESTS),sw/c)
+
+progs: $(SIM_EXE) ## Build and run every program in sw/asm/ and sw/c/
+	$(RUN_PROGS)
 
 # make sim HEX=<file> [TOHOST=<hex>] [MAX_CYCLES=<n>] [SEED=<n>] [WAVES=1] [RETIRE_LOG=<file>]
-# runs a ready-made image. make sim PROG=sw/asm/<test> builds and checks one
-# directed test (build/asm/<test>.*); C programs (sw/c/) arrive with M4.
-sim: ## Run one program on the RTL: make sim HEX=<file> [TOHOST=<hex addr>] or PROG=sw/asm/<test>
+# runs a ready-made image. make sim PROG=sw/asm/<test> or PROG=sw/c/<prog>
+# builds, converts and runs one program (build/{asm,c}/<name>.*) and checks
+# it like make progs; WAVES=1 and SEED= apply to both forms.
+sim: ## Run one program: make sim PROG=sw/c/hello (or sw/asm/<test>), or HEX=<file> [TOHOST=<hex addr>]
 ifneq ($(HEX),)
 	@$(MAKE) --no-print-directory sim-build
 	$(SIM_EXE) +hex=$(HEX) $(if $(TOHOST),+tohost=$(TOHOST)) $(if $(MAX_CYCLES),+max_cycles=$(MAX_CYCLES)) \
 	  +retire_log=$(RETIRE_LOG) $(if $(WAVES),+waves=$(SIM_DIR)/waves.$(WAVE_FMT)) $(if $(SEED),+verilator+seed+$(SEED))
-else ifneq ($(filter sw/asm/%,$(PROG)),)
-	@$(MAKE) --no-print-directory sim-build
-	$(PYTHON) $(ROOT)/scripts/run_asm.py --exe $(SIM_EXE) -v $(PROG)
 else
 	$(call need_prog)
-	$(call not_yet,M4)
+	@$(MAKE) --no-print-directory sim-build
+	$(RUN_PROGS) -v $(if $(WAVES),--waves $(SIM_DIR)/waves.$(WAVE_FMT)) $(if $(SEED),--seed $(SEED)) $(PROG)
 endif
 
 spike: ## Run one program on Spike: make spike PROG=<path>
@@ -159,8 +168,8 @@ riscof: ## Run riscv-arch-test rv32i_m/I through RISCOF
 random: ## Random program tests: make random SEEDS=<n>
 	$(call not_yet,M6.3-M6.4)
 
-regress: lint unit sim-test asm riscv-tests riscof random ## Full regression (filled in at M9.1)
-	@echo "regress: lint, unit, sim-test and asm are implemented; the other stages are placeholders"
+regress: lint unit sim-test progs riscv-tests riscof random ## Full regression (filled in at M9.1)
+	@echo "regress: lint, unit, sim-test and progs are implemented; the other stages are placeholders"
 
 syn: ## Yosys synthesis of rv_core
 	$(call not_yet,M8)

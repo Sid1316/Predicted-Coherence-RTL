@@ -91,8 +91,9 @@ Run `make help` for the current list. Targets marked *not implemented* print the
 | `make sim-test` | M3 | Check the simulator against the Python model: every SoC scenario, exit codes, retire log, waves, random reset |
 | `make sim HEX=... [TOHOST=addr]` | M3 | Run a ready-made `$readmemh` image (`MAX_CYCLES=`, `SEED=`, `WAVES=1`, `RETIRE_LOG=`) |
 | `make asm [TESTS="t00 e01"]` | M3 | Build and run the directed tests in `sw/asm/`, checking each against its `// expect:` header and the Python model |
-| `make sim PROG=sw/asm/<test>` | M3 | Build and run one directed test, showing its console output |
-| `make sim PROG=sw/c/...` | M4 | Build one C program and run it on the RTL |
+| `make c [TESTS="hello"]` | M4 | Build and run the C programs in `sw/c/` (crt0, rvlib, libgcc), checked the same way |
+| `make progs` | M4 | Both of the above |
+| `make sim PROG=sw/c/hello` | M3/M4 | Build, convert and run one program (`sw/c/<prog>` or `sw/asm/<test>`), showing its console output; `WAVES=1`, `SEED=` |
 | `make spike PROG=...` | M6 | Run one program on Spike |
 | `make compare PROG=...` | M6 | RTL vs. Spike lockstep comparison |
 | `make riscv-tests` | M5 | `rv32ui-p-*` suite |

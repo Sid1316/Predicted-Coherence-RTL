@@ -164,13 +164,15 @@ Each block gets a cocotb test in `tb/unit/test_<block>.py`, with randomized chec
 **Exit criteria:** every `sw/asm/` test passes; the retire log is produced; lint is clean.
 
 ### M4: Software infrastructure (M)
-- [ ] **M4.1** `sw/common/link.ld`: `.text` at `0x8000_0000`, `.data`/`.bss`, stack at the top of memory, a `tohost` symbol in its own section.
-- [ ] **M4.2** `sw/common/crt0.S`: zero the registers, set `sp` and `gp`, zero `.bss`, call `main`, write `(ret << 1) | 1` to `tohost` (spec.md §12).
-- [ ] **M4.3** Minimal libc stubs: `putchar` → CONSOLE MMIO, a small `printf`, and `memcpy`/`memset`. Link `libgcc` for software multiply/divide.
-- [ ] **M4.4** `scripts/elf2hex`: ELF → `$readmemh` image (via `objcopy -O verilog` or a small Python script). The Makefile also extracts the `tohost` address with `nm` and passes it to the harness as a plusarg.
-- [ ] **M4.5** Generic build rules: `make sim PROG=sw/c/hello` builds, converts and runs.
+- [x] **M4.1** `sw/common/link.ld`: `.text` at `0x8000_0000`, `.data`/`.bss`, stack at the top of memory, a `tohost` symbol in its own section.
+- [x] **M4.2** `sw/common/crt0.S`: zero the registers, set `sp` and `gp`, zero `.bss`, call `main`, write `(ret << 1) | 1` to `tohost` (spec.md §12).
+- [x] **M4.3** Minimal libc stubs: `putchar` → CONSOLE MMIO, a small `printf`, and `memcpy`/`memset`. Link `libgcc` for software multiply/divide.
+- [x] **M4.4** `scripts/elf2hex`: ELF → `$readmemh` image (via `objcopy -O verilog` or a small Python script). The Makefile also extracts the `tohost` address with `nm` and passes it to the harness as a plusarg.
+- [x] **M4.5** Generic build rules: `make sim PROG=sw/c/hello` builds, converts and runs.
 
 **Exit criteria:** `hello.c` prints "Hello, RISC-V" through the console MMIO and exits with code 0.
+
+**Status: done (2026-11-25).** As built: `tohost`/`fromhost` are defined in `crt0.S`, not in `link.ld` (spec R-3). Programs are built by `scripts/run_progs.py`, which `make sim PROG=`, `make asm`, `make c` and `make progs` call, so the compiler flags (spec §12) live in one place; it gets the `tohost` address through `scripts/elf2hex.py` (`nm`), not in the Makefile. rvlib (`sw/common/include/rvlib.h`) also has `puts`, `snprintf`, `memmove`, `memcmp`, `strlen`, `strcmp` and `exit`. `sw/c/libc_test.c` checks crt0, rvlib and libgcc on the core; every program's retire log is also compared with the Python model.
 
 ### M5: ISA compliance (M–L)
 - [ ] **M5.1** **riscv-tests (`rv32ui-p-*`)**: the stock `p` environment uses CSRs (`mtvec`, `mhartid`, …), which we don't have. Write a **custom env** in `sw/common/env/` with a minimal `riscv_test.h`: `RVTEST_CODE_BEGIN` just sets up registers, `RVTEST_PASS`/`RVTEST_FAIL` write `1` / `(TESTNUM<<1)|1` to `tohost`.

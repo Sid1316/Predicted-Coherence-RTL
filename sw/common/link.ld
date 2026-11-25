@@ -47,6 +47,9 @@ SECTIONS
 
   _end = .;
 
+  /* Unwind tables and notes: not used by these freestanding programs. */
+  /DISCARD/ : { *(.eh_frame .eh_frame_hdr .note .note.*) }
+
   /* Stack grows down from the end of RAM (16-byte aligned, ilp32 ABI). */
   _stack_top = ALIGN(ORIGIN(RAM) + LENGTH(RAM), 16);
   ASSERT(_end <= _stack_top - 0x400, "program leaves less than 1 KiB of RAM for the stack")
