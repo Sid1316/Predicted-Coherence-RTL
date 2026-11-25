@@ -153,3 +153,37 @@ class RegFileModel:
     def write(self, we: int, addr: int, data: int) -> None:
         if we and addr != 0:
             self.regs[addr] = data & MASK32
+
+
+# ---------------------------------------------------------------------------
+# Branch unit (spec §6.7)
+# ---------------------------------------------------------------------------
+
+# branch_op_t: values equal funct3 (spec §8.2)
+BRANCH_OPS = {
+    "BR_EQ": 0b000,
+    "BR_NE": 0b001,
+    "BR_LT": 0b100,
+    "BR_GE": 0b101,
+    "BR_LTU": 0b110,
+    "BR_GEU": 0b111,
+}
+
+
+def branch_ref(op_name: str, a: int, b: int) -> int:
+    """1 if the branch is taken (RV32I BEQ/BNE/BLT/BGE/BLTU/BGEU)."""
+    a &= MASK32
+    b &= MASK32
+    if op_name == "BR_EQ":
+        return int(a == b)
+    if op_name == "BR_NE":
+        return int(a != b)
+    if op_name == "BR_LT":
+        return int(to_signed32(a) < to_signed32(b))
+    if op_name == "BR_GE":
+        return int(to_signed32(a) >= to_signed32(b))
+    if op_name == "BR_LTU":
+        return int(a < b)
+    if op_name == "BR_GEU":
+        return int(a >= b)
+    raise ValueError(f"unknown branch op {op_name}")

@@ -30,6 +30,7 @@ BLOCKS = {
     "rv_alu": ["rv_pkg.sv", "rv_alu.sv"],
     "rv_imm_gen": ["rv_pkg.sv", "rv_imm_gen.sv"],
     "rv_regfile": ["rv_regfile.sv"],
+    "rv_branch_unit": ["rv_pkg.sv", "rv_branch_unit.sv"],
 }
 
 
