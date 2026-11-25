@@ -4,7 +4,7 @@
 
 | Phase | Goal | Status |
 |---|---|---|
-| **Phase 1** | A correct, fully verified **single-cycle RV32I core** in SystemVerilog, simulated with Verilator, plus the software, verification and measurement setup the rest of the project will build on. | **Planned (this document)** |
+| **Phase 1** | A correct, fully verified **single-cycle RV32I core** in SystemVerilog, simulated with Verilator, plus the software, verification and measurement setup the rest of the project will build on. | **Done for review (2026-11-25):** M0-M9.2 complete; open: Spike cross-check in CI, M6.5/M6.6, M9.3 tag, M9.4 review. See [phase1-report.md](phase1-report.md). |
 | **Phase 2** | Microarchitecture work: pipelining, memory system, ISA extensions, target platform. | **Deferred.** We make the architectural choices when Phase 1 is done, using the data Phase 1 collects (see §9). |
 
 The architecture and system design for Phase 1 (memory map, datapath, module interfaces, control signals, test protocol, coverage checklist) are specified in [spec.md](spec.md).
@@ -221,10 +221,12 @@ Each block gets a cocotb test in `tb/unit/test_<block>.py`, with randomized chec
 **Status: done (2026-11-25).** `make syn`: sv2v 0.0.13, then Yosys 0.66, then nextpnr-ecp5 0.7 on an LFE5U-25F (speed grade 6). rv_core alone: 2,163 LUT4 pre-pack, 100 flip-flops, register file in LUT RAM, 41.3 MHz. The whole single-cycle loop with 1 KiB LUT-RAM memories runs at 30.3 MHz; its critical path is about 35 % memory reads, 18 % ALU and 17 % decode. Memory finding (M8.3): instruction fetch can use block RAM, because the PC acts as the RAM's address register; the data memory cannot. Details in `docs/phase1-report.md` and `syn/reports/summary.md`.
 
 ### M9: Phase 1 closeout (S)
-- [ ] **M9.1** `make regress` runs, in one command: lint, unit tests, directed asm, `rv32ui`, RISCOF, lockstep on all programs, and a fixed set of random seeds.
-- [ ] **M9.2** Write `docs/phase1-report.md`: what was built, test results, waivers, bugs found (count and kind), synthesis numbers, benchmark stats, and the Phase 2 decision inputs table (§9) filled in with real data.
+- [x] **M9.1** `make regress` runs, in one command: lint, unit tests, directed asm, `rv32ui`, RISCOF, lockstep on all programs, and a fixed set of random seeds.
+- [x] **M9.2** Write `docs/phase1-report.md`: what was built, test results, waivers, bugs found (count and kind), synthesis numbers, benchmark stats, and the Phase 2 decision inputs table (§9) filled in with real data.
 - [ ] **M9.3** Tag the repo `phase1-done`.
 - [ ] **M9.4** Phase 2 architecture review meeting: go through §9 and decide.
+
+**Status (2026-11-25): M9.1 and M9.2 done.** `make regress` runs every stage in one command and passes, also from a clean checkout (fresh clone with submodules; 11 minutes). `docs/phase1-report.md` is complete for review. Still open: M9.3 (the tag) and M9.4 (the review meeting).
 
 ---
 
@@ -247,15 +249,15 @@ Each block gets a cocotb test in `tb/unit/test_<block>.py`, with randomized chec
 
 ## 7. Phase 1 definition of done
 
-- [ ] Every RV32I instruction is implemented and ticked in the coverage checklist (spec.md §15.1).
-- [ ] `rv32ui-p-*` pass, except documented waivers (`fence_i`, `ma_data`).
-- [ ] RISCOF `rv32i_m/I` passes 100 %.
-- [ ] Zero lockstep mismatches against Spike on all directed tests, benchmarks and ≥ 1,000 random seeds.
-- [ ] `hello.c`, Dhrystone and CoreMark run correctly.
-- [ ] Verilator lint is clean with `-Wall`.
-- [ ] `make regress` passes from a clean checkout.
-- [ ] Synthesis numbers and benchmark statistics are recorded.
-- [ ] `docs/spec.md` matches the final RTL, and `docs/phase1-report.md` is complete.
+- [x] Every RV32I instruction is implemented and ticked in the coverage checklist (spec.md §15.1).
+- [x] `rv32ui-p-*` pass, except documented waivers (`fence_i`, `ma_data`).
+- [x] RISCOF `rv32i_m/I` passes 100 %.
+- [ ] Zero lockstep mismatches against Spike on all directed tests, benchmarks and ≥ 1,000 random seeds. *(Met against the Python reference model, the §8 decision; Spike in CI is still open.)*
+- [x] `hello.c`, Dhrystone and CoreMark run correctly.
+- [x] Verilator lint is clean with `-Wall`.
+- [x] `make regress` passes from a clean checkout.
+- [x] Synthesis numbers and benchmark statistics are recorded.
+- [x] `docs/spec.md` matches the final RTL, and `docs/phase1-report.md` is complete.
 
 ---
 

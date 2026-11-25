@@ -1,6 +1,77 @@
 # RISC-V Core: Phase 1 Report
 
-Status: **in progress.** This report collects the Phase 1 measurements as the milestones produce them; M9.2 completes it (what was built, test results, waivers, bug log, synthesis numbers, and the Phase 2 decision inputs of exec.md §9).
+Status: **complete for review** (2026-11-25), apart from the open items in the last section. Phase 1 goal (exec.md): a correct, fully verified single-cycle RV32I core in SystemVerilog, simulated with Verilator, plus the software, verification and measurement setup Phase 2 builds on.
+
+## Summary
+
+- **The core:** single-cycle RV32I, CPI 1, 923 lines of SystemVerilog in `rtl/`. All 40 RV32I instructions are implemented. ECALL/EBREAK halt the core, and every error case (illegal, misaligned, bus error, fetch error) stops it with a cause (spec §10).
+- **Verified by:**
+  - unit tests on every block;
+  - 22 directed assembly tests;
+  - 40 of 42 riscv-tests `rv32ui`, with 2 documented waivers;
+  - 39 of 39 riscv-arch-test `rv32i_m/I` through RISCOF;
+  - 1,000 random programs;
+  - Dhrystone, CoreMark and five Embench programs.
+
+  Every program's full trace is compared with the reference model, instruction by instruction.
+- **Performance:** 1.03 DMIPS/MHz, 1.39 CoreMark/MHz. On ECP5: about 2,200 slices for the core logic, 41 MHz for the core alone, 30 MHz for the whole single-cycle loop with LUT-RAM memories.
+- **Reference model:** the project's own Python RV32I model, not Spike (exec.md §8 decision). An independent Spike check in CI is the main open item.
+
+## What was built
+
+| Part | Where | Notes |
+|---|---|---|
+| RTL | `rtl/` (9 files) | `rv_pkg`, `rv_pc`, `rv_decoder`, `rv_imm_gen`, `rv_regfile`, `rv_alu`, `rv_branch_unit`, `rv_lsu`, `rv_core`; Verilator `-Wall` clean |
+| Simulation SoC | `sim/` | `rv_mem_model` (64 KiB, two combinational ports), `rv_soc_sim` (CONSOLE and CYCLE MMIO, tohost watcher, retire log), `tb_top.cpp` (Verilator harness: exit codes, waves, signature dump) |
+| Software | `sw/` | `link.ld`, `crt0.S`, rvlib (printf, mem*/str*, `rv_cycles`), directed tests (`sw/asm/`), C programs (`sw/c/`), benchmark ports (`sw/bench/`) |
+| Reference model | `tb/unit/rv_model.py`, `tb/sim/harness_model.py` | RV32I + the SoC's memory map, stepped like the harness |
+| Test flows | `scripts/`, `tests/` | `run_progs.py` (asm, C, rv32ui, benchmarks), `run_riscof.py` + plugins, `randgen.py` + `run_random.py`, `trace_compare.py`, `stats.py`, `syn.py` |
+| One command | `make regress` | lint, unit, harness tests, programs, rv32ui, RISCOF, 200 random seeds, benchmarks (about 12 minutes) |
+
+## Verification results
+
+| Layer | Tool | Result |
+|---|---|---|
+| Lint | Verilator `-Wall` | clean: `rtl/`, and with `rv_soc_sim` and the `syn/` harnesses as top |
+| Unit | cocotb on Icarus (4-state, X/Z checked) | 92 tests in 10 blocks, each block checked against the Python model; each suite shown to catch injected bugs |
+| Harness | `tb/sim/test_tb_top.py` | 290 checks: every SoC scenario vs. the model, exit codes, bad inputs, waves, random reset, signatures |
+| Directed | `make asm` | 22/22: 12 pass tests, 10 error tests (one stopping instruction each) |
+| C programs | `make c` | 4/4 (hello, libc_test, ret_code, exit_nested) |
+| riscv-tests | `make riscv-tests` | 40/42 pass; `fence_i` and `ma_data` waived, and each fails exactly as its waiver says |
+| Compliance | `make riscof` | 39/39 `rv32i_m/I`: signatures match, harness exit 0, and every trace matches the model |
+| Random | `make random` | seeds 1–1000: zero mismatches, 547k instructions, all 40 instructions and all 7 stop causes covered (`make regress` runs seeds 1–200) |
+| Benchmarks | `make bench` | 7/7: Dhrystone, CoreMark, 5 Embench, each passing its own check and matching the model trace (up to 6.4M instructions) |
+| Coverage | spec §15.1 | all 40 instructions ticked (directed, riscv-tests and arch-test sources; ECALL/EBREAK through directed and random) |
+
+Every run above also compares the RTL with the reference model at each retired instruction: pc, instruction, destination register and value, and stored bytes.
+
+## Waivers and deviations
+
+| Item | Decision | Where |
+|---|---|---|
+| `rv32ui-p-fence_i` | Waived: Zifencei is not in Phase 1; FENCE.I stops with STOP_ILLEGAL | `tests/riscv-tests-waivers.txt` |
+| `rv32ui-p-ma_data` | Waived: misaligned accesses stop the core in Phase 1 | same |
+| Reference model | Python model instead of Spike (no Windows build); Spike in CI later | exec.md §8 |
+| `t09`/`t10` | Expect exit 4 (halt without tohost), because a tohost write ends the run before ECALL | spec R-11 |
+| Exit code 6 | Added for an assertion or `$fatal` in the RTL | spec R-10 |
+| CYCLE MMIO | Sim-only cycle counter at `0x1000_0008` for benchmark timing; programs that read it cannot be compared with Spike | spec R-13 |
+| Arch-test build | 2 MiB RAM and `-mno-relax` for RISCOF only | spec R-12 |
+| Embench subset | `edn` and `matmult-int` left out (too long to replay on the model), `slre` too (needs libc ctype) | M7 below |
+
+## Bug log
+
+Count of real defects (not injected ones), by the layer that found them (exec.md §6):
+
+| Layer | RTL bugs | Other defects found |
+|---|---:|---|
+| Spec review (M1) | 1: a combinational loop (`rv_lsu.enable_i` depended on the data response), fixed in the spec before any RTL (R-1) | 6 spec gaps (R-2 to R-7) |
+| Unit tests vs. model (M2–M3.2) | 1: the retire port showed `rs1 = 0` for branches (branches read rs1 outside the operand mux) | |
+| Integration (M3.3–M3.5) | 0 | Icarus 13 zero-time hang on an `always_comb` struct write in `rv_soc_sim` (worked around); harness defects: `sc_time_stamp` recursion, CR LF in console output, `$readmemh` silently accepting `ZZZZ` (now rejected); 2 spec gaps (R-10, R-11) |
+| riscv-tests, RISCOF (M5) | 0 | arch-test `LA()` macro emits compressed `c.nop` padding under relaxation (build fixed with `-mno-relax`); arch tests need 2 MiB RAM (R-12) |
+| Random (M6) | 0 | |
+| Benchmarks (M7) | 0 | no CSR timer on the core: added the CYCLE MMIO counter (R-13) |
+
+Both RTL bugs were found before integration. After M3.2, no layer found an RTL bug: every integration test, upstream suite, random seed and benchmark matched the model on its first run. The test layers still have teeth: at every level, injected RTL bugs were caught. Unit suites caught every injected bug apart from equivalent ones. At system level, 5 of 6 RTL mutations were caught by the directed tests; the sixth, an x0 write, is invisible because reads of x0 return 0. An SLTU bug, which breaks libgcc's software division, was caught by `libc_test`, an SRA bug by RISCOF (`sra-01`, `srai-01`), and a BGE bug by 4 of the first 6 random seeds.
 
 ## M7: Benchmarks, baseline and profile
 
@@ -123,3 +194,39 @@ ECP5 block RAM (DP16KD) reads synchronously: the data appears one clock after th
 - **Instruction memory can use block RAM even in a single-cycle core.** The fetch address is `pc_q`, a register, so the block RAM's address register can be the PC itself: the RAM latches `next_pc` at the clock edge and delivers the instruction in the next cycle. Yosys did this transform without being asked (soc_bram: 1 DP16KD). It saves 1,806 slices against LUT RAM, but does not raise Fmax: the block RAM's 5.8 ns clock-to-out costs about what the LUT-RAM read and its mux do.
 - **Data memory cannot.** Its address comes from the ALU in the same cycle, so the read needs a second clock. With block RAM, a load must either take two cycles (a stall, CPI > 1) or move into a pipeline stage. The only same-cycle option is LUT RAM: 128 DPR16X4 per KiB here, so only small memories are practical.
 - **Phase 2 input:** a 2-stage design (fetch / execute) can keep instruction fetch in block RAM with no extra latency, and gets the data side through a memory stage or a load stall. That moves the data-memory read (18 % of today's loop) out of the critical path. The `rv_core` memory ports (spec §8.3, §16) already have the `ready` and latency hooks for this.
+
+## Phase 2 decision inputs (exec.md §9, filled in)
+
+Phase 1 measures; it decides none of these. The review at M9.4 does.
+
+| Phase 2 decision | What Phase 1 measured |
+|---|---|
+| Pipeline depth and style | The whole single-cycle loop is 38.8 ns (hierarchical netlist, 25.8 MHz; 30.3 MHz flattened). Its parts: instruction-memory read 17 %, decode 17 %, ALU 18 %, data-memory read 18 %, LSU 9 %, write-back and control 11 %; about 70 % of it is routing. With the memories out, the core's slowest path is the stop condition (ALU address → misalignment detection → stop priority → next-PC, 41.3 MHz flattened). |
+| Hazard handling | RAW at distance 1: 11–66 % of instructions, at distance 2: 8–17 %, at distance 3: 5–24 %. Load-use pairs: 0–4.7 % of instructions, up to 37 % of loads (CoreMark). |
+| Branch handling | Branches are 3–27 % of instructions. Backward branches are taken 62–100 % of the time, forward ones 18–62 %. |
+| Memory interface / bus | ECP5 block RAM reads synchronously. Instruction fetch can still use it with the PC as the RAM's address register (no Fmax change, 1,806 fewer slices); the data memory needs a stage or a stall (M8.3). The ports already carry `ready` for latency (spec §8.3, §16). |
+| Memory hierarchy | Code 8.7–19 KB, data up to 12.6 KB, stack up to 7.8 KB for every benchmark: each fits in the 64 KiB RAM. |
+| ISA extensions and order | Software multiply/divide takes 59 % of CoreMark's instructions and 47 % of Embench `ud`'s (7 % for Dhrystone, under 1 % for the others): M is the extension with the most measured effect. C would shrink the 8.7–19 KB of code; no workload needed interrupts or an OS. |
+| Target platform | rv_core alone uses about 9 % of an LFE5U-25F (2,203 TRELLIS_COMB with the harness). The whole loop with 2 KiB of LUT-RAM memory uses 22 %. |
+| Verification scaling | 2 RTL bugs, both found before integration (spec review, unit tests vs. model); after that, zero mismatches across every suite, 1,000 random seeds and 22M benchmark instructions. Every comparison so far uses the project's own model, so an independent reference (Spike in CI, or riscv-formal, M6.6) is the most valuable next step. |
+
+## Phase 1 definition of done (exec.md §7)
+
+| Criterion | Status |
+|---|---|
+| Every RV32I instruction implemented and ticked (spec §15.1) | Done: 40/40 |
+| `rv32ui-p-*` pass except the documented waivers | Done: 40/42, `fence_i` and `ma_data` waived |
+| RISCOF `rv32i_m/I` passes 100 % | Done: 39/39, against the Python reference |
+| Zero lockstep mismatches against Spike on directed tests, benchmarks, ≥ 1,000 random seeds | **Met against the Python reference model, not Spike** (exec.md §8 decision). Spike in CI is open. |
+| `hello.c`, Dhrystone and CoreMark run correctly | Done |
+| Verilator lint clean with `-Wall` | Done |
+| `make regress` passes from a clean checkout | Done: a fresh clone with submodules passed every stage (11 minutes) |
+| Synthesis numbers and benchmark statistics recorded | Done: M7, M8 above |
+| `docs/spec.md` matches the final RTL, this report complete | Done: `rv_pkg.sv` matches spec §8 line for line; all module ports match spec §6 |
+
+## Open items
+
+1. **An independent reference:** run the lockstep comparison against Spike on a Linux CI runner (`scripts/trace_compare.py` already reads Spike `--log-commits`; its Spike parser is checked only on hand-written samples so far). Programs that read the CYCLE counter cannot be compared with Spike.
+2. **M6.5** (riscv-dv as a second random source, optional) and **M6.6** (riscv-formal, stretch): not done.
+3. **M9.4:** the Phase 2 architecture review meeting, using the table above.
+4. `edn` and `matmult-int` (Embench) were left out because the Python model replays about 50k instructions/s; a faster reference (Spike) would let them in.

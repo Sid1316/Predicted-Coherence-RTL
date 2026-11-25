@@ -422,10 +422,10 @@ A read and a write to the same register in the same cycle returns the **old** va
 | `bus_err_o` | out | `dmem_rsp_i.err` for an active request |
 
 ### 6.9 `rv_mem_model` (sim only)
-Two ports: port A (fetch, read-only, combinational) and port B (data, combinational read, write on clock edge under `be`). Contents loaded with `$readmemh` from `+hex=`. Address bits `[31:2]` minus `MEM_BASE` index the word array. Out-of-range addresses set `err`.
+Ports: `clk_i`, port A `imem_req_i`/`imem_rsp_o` (fetch, read-only, combinational) and port B `dmem_req_i`/`dmem_rsp_o` (data, combinational read, write on the clock edge under `be`). Parameter `MEM_SIZE_BYTES` (§2.4). Every word starts at 0, then the image from `+hex=` is loaded with `$readmemh`. `addr - MEM_BASE` indexes the word array; an address outside RAM sets `err` for a valid request, reads 0 and writes nothing (no aliasing). Port B also returns the addressed word for stores. Under Verilator only, a DPI-C function `rv_mem_peek(idx)` returns word `idx`, which the harness uses for the `+signature=` dump (§11).
 
 ### 6.10 `rv_soc_sim` (sim only)
-Instantiates `rv_core` and `rv_mem_model`, decodes data addresses (RAM / `CONSOLE` / `CYCLE` / unmapped), holds the `CYCLE` counter (§2.3), prints console bytes with `$write("%c")`, watches the retire port for a store to the `tohost` address (from `+tohost=`), and writes the retire log (§9.2). Exposes `done_o`, `tohost_value_o`, `halted_o`, `status_o` to the C++ harness.
+Instantiates `rv_core` and `rv_mem_model`, decodes data addresses (RAM / `CONSOLE` / `CYCLE` / unmapped), holds the `CYCLE` counter (§2.3), prints console bytes with `$write("%c")`, watches the retire port for a store to the `tohost` address (from `+tohost=`), and writes the retire log (§9.2). Ports: `clk_i`, `rst_i`; outputs `done_o` (tohost written, sticky), `tohost_value_o` (the tohost word after that store), `halted_o`, `status_o`, `console_valid_o`/`console_data_o` (a console byte this cycle) and `retire_o`. Parameters `RESET_PC`, `MEM_SIZE_BYTES`.
 
 ---
 
