@@ -1,0 +1,15 @@
+// expect: 0
+// console-has: embench: benchmark() took
+// max_cycles: 20000000
+// Embench 1.0 statemate (sw/bench/third_party/embench-iot/src/statemate), unmodified, with
+// Embench's support/main.c and sw/bench/embench_common/ board support; the exit code
+// is Embench's own verify_benchmark() result.
+src sw/bench/third_party/embench-iot/src/statemate/libstatemate.c
+src sw/bench/third_party/embench-iot/support/main.c
+src sw/bench/third_party/embench-iot/support/beebsc.c
+src sw/bench/embench_common/boardsupport.c
+inc sw/bench/third_party/embench-iot/support
+inc sw/bench/embench_common
+def HAVE_BOARDSUPPORT_H
+def WARMUP_HEAT=1
+flag -w

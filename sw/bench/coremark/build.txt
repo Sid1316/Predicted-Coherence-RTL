@@ -1,0 +1,29 @@
+// expect: 0
+// console-has: 2K performance run parameters for coremark.
+// console-has: seedcrc          : 0xe9f5
+// console-has: [0]crclist       : 0xe714
+// console-has: [0]crcmatrix     : 0x1fd7
+// console-has: [0]crcstate      : 0x8e3a
+// console-not: ERROR! list crc
+// console-not: ERROR! matrix crc
+// console-not: ERROR! state crc
+// console-not: Cannot validate
+// max_cycles: 5000000
+// CoreMark 1.01 (sw/bench/third_party/coremark), unmodified, with the port in
+// this directory. One iteration of the 2K performance run; CoreMark checks
+// its own list/matrix/state CRCs against the known values for these seeds
+// (the expected values above are the ones core_main.c holds for seedcrc 0xe9f5).
+// It also prints "ERROR! Must execute for at least 10 secs", a reporting
+// rule a simulation cannot meet; that line is expected.
+src sw/bench/third_party/coremark/core_list_join.c
+src sw/bench/third_party/coremark/core_main.c
+src sw/bench/third_party/coremark/core_matrix.c
+src sw/bench/third_party/coremark/core_state.c
+src sw/bench/third_party/coremark/core_util.c
+inc sw/bench/third_party/coremark
+def ITERATIONS=1
+def PERFORMANCE_RUN=1
+def FLAGS_STR="-O2 -march=rv32i -mabi=ilp32"
+flag -Wno-unused-parameter
+flag -Wno-format
+flag -Wno-maybe-uninitialized

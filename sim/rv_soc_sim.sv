@@ -9,6 +9,10 @@
 //     with lane-replicated store data that is the stored byte for SB/SH/SW
 //     to offset 0). Stores to offsets 1..3 print nothing. Reads return 0.
 //     No error either way.
+//   - CYCLE (0x1000_0008 low word, 0x1000_000C high word): a 64-bit count of
+//     clock cycles since reset, for benchmark timing (exec.md M7). Reads
+//     return it (sub-word loads take their bytes from the addressed word);
+//     stores are bus errors.
 //   - tohost (+tohost=<hex address>): when a store to the tohost word
 //     retires, done_o is set at that clock edge and tohost_value_o holds the
 //     word as it is after the store (partial stores merged with the old
@@ -74,19 +78,38 @@ module rv_soc_sim
   );
 
   // -------------------------------------------------------------------------
+  // CYCLE counter (spec §2.3): clock cycles since reset was released, so a
+  // load in the k-th cycle after reset reads k (at CPI 1: the load's retire
+  // number). Read-only; a store to it is a bus error.
+  // -------------------------------------------------------------------------
+  localparam logic [31:0] CYCLE_ADDR = 32'h1000_0008;   // LO at +0, HI at +4
+
+  logic [63:0] cycle_q;
+
+  always_ff @(posedge clk_i) begin
+    if (rst_i) cycle_q <= 64'd0;
+    else       cycle_q <= cycle_q + 64'd1;
+  end
+
+  // -------------------------------------------------------------------------
   // Data address decode
   // -------------------------------------------------------------------------
-  logic is_console;
+  logic        is_console, is_cycle;
+  logic [31:0] cycle_word;
 
   assign is_console = (core_dreq.addr[31:2] == CONSOLE_ADDR[31:2]);
+  assign is_cycle   = (core_dreq.addr[31:3] == CYCLE_ADDR[31:3]);
+  assign cycle_word = core_dreq.addr[2] ? cycle_q[63:32] : cycle_q[31:0];
 
   // Continuous assigns, not an always_comb: Icarus 13 spins forever in zero
   // time on an always_comb that writes core_drsp as '0 and then sets .ready
   // (it hung on the first CONSOLE access). Fields in struct order (spec §8.3);
   // Icarus has no named assignment patterns.
-  assign mem_dreq  = {core_dreq.valid & ~is_console, core_dreq.we, core_dreq.be,
+  assign mem_dreq  = {core_dreq.valid & ~is_console & ~is_cycle, core_dreq.we, core_dreq.be,
                       core_dreq.addr, core_dreq.wdata};
-  assign core_drsp = is_console ? {1'b1, 32'd0, 1'b0} : mem_drsp;   // ready, rdata, err
+  assign core_drsp = is_console ? {1'b1, 32'd0, 1'b0} :                  // ready, rdata, err
+                     is_cycle   ? {1'b1, cycle_word, core_dreq.we} :     // stores: bus error
+                                  mem_drsp;
 
   assign console_valid_o = core_dreq.valid & core_dreq.we & is_console & core_dreq.be[0];
   assign console_data_o  = core_dreq.wdata[7:0];

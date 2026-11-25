@@ -1,0 +1,14 @@
+// expect: 0
+// console-has: Dhrystones per Second:
+// console-not: Measured time too small
+// console-has: dhrystone: final values correct
+// max_cycles: 3000000
+// Dhrystone 2.2 from riscv-tests (tests/riscv-tests/benchmarks/dhrystone), K&R C;
+// dhrystone_main.c is compiled through dhry_main_renamed.c. The C sources are
+// built as gnu99 with -fpermissive (GCC 14+ rejects its implicit int by default) and
+// warnings off: third-party code, unmodified.
+src tests/riscv-tests/benchmarks/dhrystone/dhrystone.c
+inc tests/riscv-tests/benchmarks/dhrystone
+flag -std=gnu99
+flag -fpermissive
+flag -w

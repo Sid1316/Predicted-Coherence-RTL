@@ -437,6 +437,7 @@ STOP_CAUSES = {
 MEM_BASE = 0x8000_0000       # spec §2.3
 MEM_SIZE_BYTES = 0x1_0000
 CONSOLE_ADDR = 0x1000_0000
+CYCLE_ADDR = 0x1000_0008     # 64-bit cycle counter, LO then HI (sim/rv_soc_sim.sv)
 
 FORMATS = {row["Instr"]: row["Fmt"] for row in _md_table(_SPEC, "| # | Instr | Fmt")}
 
@@ -482,6 +483,7 @@ class SimMemory:
     def __init__(self, image: dict[int, int] | None = None, size: int = MEM_SIZE_BYTES):
         self.size = size
         self.ram = bytearray(size)
+        self.cycle = 0          # the CYCLE counter's value; CoreModel.step sets it
         self.console = bytearray()
         # RAM addresses whose fetch reports err (the response still carries
         # the stored word), to check that a faulting fetch has no effect.
@@ -495,6 +497,10 @@ class SimMemory:
     @staticmethod
     def is_console(addr: int) -> bool:
         return addr & ~3 & MASK32 == CONSOLE_ADDR
+
+    @staticmethod
+    def is_cycle(addr: int) -> bool:
+        return addr & ~7 & MASK32 == CYCLE_ADDR
 
     def fetch(self, addr: int) -> tuple[int, int]:
         """(word, err) for an instruction fetch; only RAM is executable."""
@@ -512,6 +518,8 @@ class SimMemory:
             return self.word(addr), 0
         if self.is_console(addr):
             return 0, 0
+        if self.is_cycle(addr):
+            return (self.cycle >> 32 if addr & 4 else self.cycle) & MASK32, 0
         return 0, 1
 
     def write(self, addr: int, be: int, wdata: int) -> int:
@@ -520,6 +528,8 @@ class SimMemory:
             if be & 1:
                 self.console.append(wdata & 0xFF)
             return 0
+        if self.is_cycle(addr):
+            return 1                # read-only
         if not self.in_ram(addr):
             return 1
         a = (addr & ~3) - MEM_BASE
@@ -576,6 +586,7 @@ class CoreModel:
         pc = self.pc
         r = {name: 0 for name, _ in RETIRE_FIELDS}
         r.update(valid=1, order=self.order, pc_rdata=pc)
+        self.mem.cycle = self.order     # one instruction per cycle since reset
         self.order += 1
 
         word, ferr = self.mem.fetch(pc)

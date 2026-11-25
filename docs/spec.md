@@ -49,6 +49,7 @@ The review was done on 2026-11-25 against the pinned submodules (`tests/riscv-te
 | R-10 | §2.2, §11 | Writing the harness (M3.4) needed: an exit code for an RTL assertion or `$fatal` (Verilator's default handler exits with 1, the "tohost fail" code); what makes `+hex=` bad (Verilator's `$readmemh` reads a word such as `ZZZZZZZZ` as random bits without an error); which stream the console and the result use; and the default random-reset seed. | New exit code 6 (simulation error). `+hex=` is required and checked before loading (format, every word inside RAM); a bad image is exit 5. stdout carries only console bytes, unchanged; the harness's result line goes to stderr. Without `+verilator+` plusargs the harness uses `rand+reset+2` and seed 1, so runs are repeatable (N-5). |
 | R-11 | §11, §15.2 | Writing the directed tests (M3.5): `t09`/`t10` were to write `tohost = 1` and then ECALL/EBREAK, expecting exit 0. The harness ends the run when the `tohost` store retires, so the ECALL would never execute and the test would check nothing. The `# expect:` header from §11 is not valid in a preprocessed `.S` file. | `t09`/`t10` execute ECALL/EBREAK without writing `tohost` and expect exit 4 with the stop cause; a fail store follows, so an instruction that does not stop gives exit 1. Headers use `//`. |
 | R-12 | §2.4, §11, §12 | Running riscv-arch-test (M5.3): `jal-01` needs about 1.7 MiB and the branch tests up to 310 KiB, more than the 64 KiB RAM. `arch_test.h`'s `LA()` macro switches on `.option rvc` around its `.align` padding, and with linker relaxation ld fills that padding with `c.nop`, illegal on RV32I. riscv-config requires `misa` to be described as accessible. RISCOF names signatures `<DUT|Reference>-<plugin>.signature`. | `MEM_SIZE_BYTES` stays 64 KiB by default; RISCOF builds a second simulator with 2 MiB (`build/sim-2097152/`), links with `--defsym=__ram_size` (`link.ld` takes the size from it) and runs the model with the same size. Arch tests are built with `-mno-relax`. The ISA YAML describes `misa` (MXL = 1, I) although the core has no CSRs. The harness dumps the signature through a DPI-C read port on `rv_mem_model` (Verilator only). |
+| R-13 | §2.3, §6.10 | Benchmarks (M7) time themselves with a cycle counter (Dhrystone's `read_csr(mcycle)`, CoreMark's port timer, Embench's start/stop triggers), and this core has no CSRs. Faking the timers would make the benchmarks print misleading numbers. | A sim-only `CYCLE` MMIO register at `0x1000_0008` (§2.3) in `rv_soc_sim`, mirrored in the Python model; `rv_cycles()` in rvlib reads it. Programs that read it cannot be run against Spike (it has no such device). |
 
 ---
 
@@ -117,7 +118,9 @@ The review was done on 2026-11-25 against the pinned submodules (`tests/riscv-te
 |---|---|---|---|---|
 | `0x0000_0000 – 0x0FFF_FFFF` | — | unmapped | — | Access → bus error |
 | `0x1000_0000` | 4 B | `CONSOLE` | W: byte write prints `wdata[7:0]`; R: returns 0 | Same base address as Spike's default UART, so console output can work under Spike too (confirm on the pinned Spike version). |
-| `0x1000_0004 – 0x7FFF_FFFF` | — | unmapped | — | Access → bus error |
+| `0x1000_0004 – 0x1000_0007` | — | unmapped | — | Access → bus error |
+| `0x1000_0008 – 0x1000_000F` | 8 B | `CYCLE` (sim only) | R: clock cycles since reset, 64 bits, low word at `+0`, high word at `+4`; W: bus error | For benchmark timing (exec.md M7), as the core has no CSRs. A load in the k-th cycle after reset reads k (at CPI 1, the load's retire number), so the reference model reproduces it exactly. Spike has no such device: a program that reads it cannot be compared with Spike. |
+| `0x1000_0010 – 0x7FFF_FFFF` | — | unmapped | — | Access → bus error |
 | `0x8000_0000 – 0x8000_FFFF` | 64 KiB (`MEM_SIZE_BYTES`) | RAM (code + data) | R/W | Reset vector at base. `tohost`/`fromhost` live here (§11). |
 | `0x8001_0000 – 0xFFFF_FFFF` | — | unmapped | — | Access → bus error |
 
@@ -422,7 +425,7 @@ A read and a write to the same register in the same cycle returns the **old** va
 Two ports: port A (fetch, read-only, combinational) and port B (data, combinational read, write on clock edge under `be`). Contents loaded with `$readmemh` from `+hex=`. Address bits `[31:2]` minus `MEM_BASE` index the word array. Out-of-range addresses set `err`.
 
 ### 6.10 `rv_soc_sim` (sim only)
-Instantiates `rv_core` and `rv_mem_model`, decodes data addresses (RAM / `CONSOLE` / unmapped), prints console bytes with `$write("%c")`, watches the retire port for a store to the `tohost` address (from `+tohost=`), and writes the retire log (§9.2). Exposes `done_o`, `tohost_value_o`, `halted_o`, `status_o` to the C++ harness.
+Instantiates `rv_core` and `rv_mem_model`, decodes data addresses (RAM / `CONSOLE` / `CYCLE` / unmapped), holds the `CYCLE` counter (§2.3), prints console bytes with `$write("%c")`, watches the retire port for a store to the `tohost` address (from `+tohost=`), and writes the retire log (§9.2). Exposes `done_o`, `tohost_value_o`, `halted_o`, `status_o` to the C++ harness.
 
 ---
 

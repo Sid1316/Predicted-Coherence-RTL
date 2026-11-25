@@ -4,3 +4,9 @@
 [submodule "tests/riscv-arch-test"]
 	path = tests/riscv-arch-test
 	url = https://github.com/riscv-non-isa/riscv-arch-test.git
+[submodule "sw/bench/coremark"]
+	path = sw/bench/third_party/coremark
+	url = https://github.com/eembc/coremark.git
+[submodule "sw/bench/embench-iot"]
+	path = sw/bench/third_party/embench-iot
+	url = https://github.com/embench/embench-iot.git

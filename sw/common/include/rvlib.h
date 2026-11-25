@@ -21,6 +21,9 @@
 
 // Console MMIO (spec §2.3): a byte store prints it.
 #define RV_CONSOLE_ADDR 0x10000000u
+// CYCLE counter MMIO (spec §2.3, sim only): 64-bit clock cycles since reset,
+// low word at +0, high word at +4. Read-only.
+#define RV_CYCLE_ADDR 0x10000008u
 
 int  putchar(int c);
 int  puts(const char *s);         // s and a newline
@@ -35,6 +38,10 @@ void  *memset(void *dst, int c, size_t n);
 int    memcmp(const void *a, const void *b, size_t n);
 size_t strlen(const char *s);
 int    strcmp(const char *a, const char *b);
+char  *strcpy(char *dst, const char *src);
+
+// Clock cycles since reset (the CYCLE counter; equal to instructions retired at CPI 1).
+uint64_t rv_cycles(void);
 
 // Ends the program: tohost = (code << 1) | 1 (sw/common/crt0.S, spec §11).
 void exit(int code) __attribute__((noreturn));

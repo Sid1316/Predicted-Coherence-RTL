@@ -41,12 +41,14 @@ import codecs
 import re
 import subprocess
 import sys
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ASM_DIR = ROOT / "sw" / "asm"
 C_DIR = ROOT / "sw" / "c"
+BENCH_DIR = ROOT / "sw" / "bench"
 RV32UI_DIR = ROOT / "tests" / "riscv-tests" / "isa" / "rv32ui"
 RV_MACROS = ROOT / "tests" / "riscv-tests" / "isa" / "macros" / "scalar"
 RV_ENV = ROOT / "sw" / "common" / "env" / "p"
@@ -70,7 +72,8 @@ COMMON_FLAGS = ["-march=rv32i", "-mabi=ilp32", "-static", "-nostdlib", "-nostart
 C_FLAGS = ["-O2", "-g", "-ffreestanding", "-fno-tree-loop-distribute-patterns", "-Wall", "-Wextra",
            "-I", str(COMMON / "include")]
 
-HEADER = re.compile(r"^\s*(?://|#)\s*(expect|console|tohost|max_cycles):\s?(.*?)\s*$")
+HEADER = re.compile(r"^\s*(?://|#)\s*(expect|console|console-has|console-not|tohost|max_cycles):\s?(.*?)\s*$")
+BUILD_LINE = re.compile(r"^(src|inc|def|flag)\s+(\S.*?)\s*$")
 EXPECT = re.compile(r"(\d+)(?:\s+(STOP_[A-Z_]+))?")
 RESULT = re.compile(r"^tb_top: .* exit=\d+$")
 
@@ -87,6 +90,9 @@ class Prog:
     sources: list[Path]
     expect: dict | None = None # instead of the header (upstream tests)
     note: str = ""             # shown after the result (e.g. the waiver reason)
+    incs: list[Path] | None = None    # bench: extra include directories (build.txt)
+    defs: list[str] | None = None     # bench: -D macros
+    flags: list[str] | None = None    # bench: extra compiler flags
 
     @property
     def out(self) -> Path:
@@ -124,6 +130,8 @@ def waivers() -> dict[str, tuple[int, str | None, str]]:
 
 
 def suite(name: str) -> list[Prog]:
+    if name == "bench":
+        return bench_suite()
     if name == "asm":
         return [Prog(p.stem, "asm", p, [p]) for p in sorted(ASM_DIR.glob("*.S"))]
     if name == "rv32ui":
@@ -144,7 +152,40 @@ def suite(name: str) -> list[Prog]:
     return sorted(progs, key=lambda p: p.name)
 
 
-SUITES = ("asm", "c", "rv32ui")
+def bench_prog(d: Path) -> Prog:
+    """A benchmark port: sw/bench/<name>/ with build.txt (header lines, then
+    src/inc/def/flag lines; paths relative to the repository root) and the
+    port's own .c/.S files."""
+    cfg = d / "build.txt"
+    srcs = sorted([*d.glob("*.c"), *d.glob("*.S")])
+    incs, defs, flags = [d], [], []
+    for line in cfg.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("//") or line.startswith("#"):
+            continue
+        m = BUILD_LINE.match(line)
+        if not m:
+            raise SystemExit(f"run_progs: {cfg}: bad line: {line}")
+        kind, val = m[1], m[2]
+        if kind == "src":
+            srcs.append(ROOT / val)
+        elif kind == "inc":
+            incs.append(ROOT / val)
+        elif kind == "def":
+            defs.append(val)
+        else:
+            flags.append(val)
+    for s in srcs + incs:
+        if not s.exists():
+            raise SystemExit(f"run_progs: {cfg}: {s} not found (git submodule update --init?)")
+    return Prog(d.name, "bench", cfg, srcs, incs=incs, defs=defs, flags=flags)
+
+
+def bench_suite() -> list[Prog]:
+    return [bench_prog(d) for d in sorted(BENCH_DIR.iterdir()) if (d / "build.txt").exists()]
+
+
+SUITES = ("asm", "c", "rv32ui", "bench")
 
 
 def select(args: list[str]) -> list[Prog]:
@@ -167,6 +208,10 @@ def select(args: list[str]) -> list[Prog]:
             out += suite("c")
         elif p == RV32UI_DIR:
             out += suite("rv32ui")
+        elif p == BENCH_DIR:
+            out += suite("bench")
+        elif p is not None and p.is_dir() and (p / "build.txt").exists():
+            out.append(bench_prog(p))
         elif p is not None and p.suffix == ".S" and p.parent == RV32UI_DIR:
             out += [g for g in suite("rv32ui") if g.main == p]
         elif p is not None and p.suffix == ".S" and p.parent == ASM_DIR:
@@ -193,8 +238,8 @@ def select(args: list[str]) -> list[Prog]:
 # ---------------------------------------------------------------------------
 
 def header(src: Path) -> dict:
-    h = {"max_cycles": DEFAULT_MAX_CYCLES}
-    for line in src.read_text(encoding="utf-8").splitlines()[:15]:
+    h = {"max_cycles": DEFAULT_MAX_CYCLES, "console-has": [], "console-not": []}
+    for line in src.read_text(encoding="utf-8").splitlines()[:25]:
         m = HEADER.match(line)
         if not m:
             continue
@@ -206,12 +251,14 @@ def header(src: Path) -> dict:
             h["code"], h["cause"] = int(e[1]), e[2]
         elif key == "console":
             h["console"] = codecs.decode(val, "unicode_escape").encode("latin-1")
+        elif key in ("console-has", "console-not"):
+            h[key].append(codecs.decode(val, "unicode_escape").encode("latin-1"))
         elif key == "tohost":
             h["tohost"] = int(val, 16)
         elif key == "max_cycles":
             h["max_cycles"] = int(val)
     if "code" not in h:
-        raise ProgError(f"{src.name}: no '// expect: <code> [<cause>]' header in the first 15 lines")
+        raise ProgError(f"{src.name}: no '// expect: <code> [<cause>]' header in the first 25 lines")
     return h
 
 
@@ -229,13 +276,14 @@ def build(g: Prog) -> tuple[Path, int, str]:
         cmd = [tool("gcc"), *flags, "-I", str(RV_ENV), "-I", str(RV_MACROS), *map(str, g.sources)]
     else:
         lib = sorted((COMMON / "lib").glob("*.c"))
-        cmd = [tool("gcc"), *COMMON_FLAGS, *C_FLAGS, str(COMMON / "crt0.S"), *map(str, g.sources),
+        extra = [*[f"-I{i}" for i in g.incs or []], *[f"-D{d}" for d in g.defs or []], *(g.flags or [])]
+        cmd = [tool("gcc"), *COMMON_FLAGS, *C_FLAGS, *extra, str(COMMON / "crt0.S"), *map(str, g.sources),
                *map(str, lib), "-lgcc", f"-Wl,-Map={g.out.with_suffix('.map')}"]
     p = subprocess.run([*cmd, "-o", str(elf)], capture_output=True)
     warnings = p.stderr.decode(errors="replace").strip()
     if p.returncode != 0:
         raise ProgError(f"build failed:\n{warnings}")
-    dis = subprocess.run([tool("objdump"), "-d", "-S" if g.suite == "c" else "-d", str(elf)],
+    dis = subprocess.run([tool("objdump"), "-d", "-S" if g.suite in ("c", "bench") else "-d", str(elf)],
                          capture_output=True)
     g.out.with_suffix(".dis").write_bytes(dis.stdout)
     hexf = g.out.with_suffix(".hex")
@@ -246,21 +294,17 @@ def build(g: Prog) -> tuple[Path, int, str]:
     return hexf, tohost, warnings
 
 
-def run_prog(g: Prog, exe: Path, verbose: bool, extra: list[str]) -> str:
-    """Return the harness result line; raise ProgError on any failed check."""
+def run_prog(g: Prog, exe: Path, verbose: bool, extra: list[str]) -> tuple[str, str, str]:
+    """Return (result line, compiler warnings, console output); raise ProgError on a failed check."""
     h = g.expect if g.expect is not None else header(g.main)
     hexf, tohost, warnings = build(g)
-    if warnings:
-        print(f"  ----  {g.name}: compiler output:\n{warnings}")
     log = g.out.with_suffix(".retire.log")
     p = subprocess.run([str(exe), f"+hex={hexf.as_posix()}", f"+tohost={tohost:08x}",
                         f"+retire_log={log.as_posix()}", f"+max_cycles={h['max_cycles']}", *extra],
                        capture_output=True, timeout=600)
     err = p.stderr.decode(errors="replace").strip().splitlines()
     result = next((l for l in reversed(err) if RESULT.match(l)), "(no result line)")
-    if verbose:
-        sys.stdout.write(p.stdout.decode(errors="replace"))
-        print(result)
+    shown = (p.stdout.decode(errors="replace") + result + "\n") if verbose else ""
 
     problems = []
     if p.returncode != h["code"]:
@@ -269,6 +313,12 @@ def run_prog(g: Prog, exe: Path, verbose: bool, extra: list[str]) -> str:
         problems.append(f"expected {h['cause']}")
     if "console" in h and p.stdout != h["console"]:
         problems.append(f"console {p.stdout!r}, expected {h['console']!r}")
+    for s in h.get("console-has", []):
+        if s not in p.stdout:
+            problems.append(f"console lacks {s!r}")
+    for s in h.get("console-not", []):
+        if s in p.stdout:
+            problems.append(f"console has {s!r}")
     if "tohost" in h and f"tohost={h['tohost']:08x}" not in result:
         problems.append(f"expected tohost={h['tohost']:08x}")
 
@@ -288,7 +338,18 @@ def run_prog(g: Prog, exe: Path, verbose: bool, extra: list[str]) -> str:
             problems.append(f"retire log has {len(got)} lines, model {len(exp.lines)}")
     if problems:
         raise ProgError(f"{result}\n    " + "\n    ".join(problems))
-    return result.removeprefix("tb_top: ") + (f"  {g.note}" if g.note else "")
+    return result.removeprefix("tb_top: ") + (f"  {g.note}" if g.note else ""), warnings, shown
+
+
+def run_one(g: Prog, exe: Path, verbose: bool, extra: list[str]) -> tuple[bool, str]:
+    """Run one program and format its report lines (in a worker process with -j)."""
+    label = f"{g.suite}/{g.name}"
+    try:
+        result, warnings, shown = run_prog(g, exe, verbose, extra)
+        text = (f"  ----  {g.name}: compiler output:\n{warnings}\n" if warnings else "") + shown
+        return True, text + f"  PASS  {label:28s} {result}"
+    except (ProgError, Elf2HexError, subprocess.TimeoutExpired) as e:
+        return False, f"  FAIL  {label:28s} {e}"
 
 
 def main() -> int:
@@ -297,6 +358,7 @@ def main() -> int:
     ap.add_argument("-v", "--verbose", action="store_true", help="show console output and the result line")
     ap.add_argument("--waves", type=Path, help="write a wave file (one program only)")
     ap.add_argument("--seed", type=int, help="+verilator+seed+ for the random register reset")
+    ap.add_argument("-j", "--jobs", type=int, default=1, help="programs to run at once")
     ap.add_argument("programs", nargs="*")
     args = ap.parse_args()
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -312,13 +374,17 @@ def main() -> int:
             raise SystemExit("run_progs: --waves needs exactly one program")
         extra.append(f"+waves={args.waves.as_posix()}")
     failed = 0
-    for g in progs:
-        label = f"{g.suite}/{g.name}"
-        try:
-            print(f"  PASS  {label:28s} {run_prog(g, args.exe, args.verbose, extra)}")
-        except (ProgError, Elf2HexError, subprocess.TimeoutExpired) as e:
-            failed += 1
-            print(f"  FAIL  {label:28s} {e}")
+    if args.jobs > 1 and len(progs) > 1:
+        with ProcessPoolExecutor(max_workers=args.jobs) as pool:
+            reports = pool.map(run_one, progs, *zip(*[(args.exe, args.verbose, extra)] * len(progs)))
+            for ok, text in reports:          # in program order
+                failed += not ok
+                print(text, flush=True)
+    else:
+        for g in progs:
+            ok, text = run_one(g, args.exe, args.verbose, extra)
+            failed += not ok
+            print(text, flush=True)
     print(f"\nrun_progs: {len(progs) - failed}/{len(progs)} passed")
     return 1 if failed else 0
 

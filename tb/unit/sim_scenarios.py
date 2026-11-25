@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from rv_model import CONSOLE_ADDR, MEM_BASE, MEM_SIZE_BYTES, RESET_PC, asm, write_hex
+from rv_model import CONSOLE_ADDR, CYCLE_ADDR, MEM_BASE, MEM_SIZE_BYTES, RESET_PC, asm, write_hex
 from rv_progs import DATA, Prog, random_program
 
 MEM_END = MEM_BASE + MEM_SIZE_BYTES
@@ -156,6 +156,21 @@ def prog_run_off_end() -> dict[int, int]:
     return image
 
 
+def prog_cycle() -> dict[int, int]:
+    """The CYCLE counter: LO read at different cycles, every load width and
+    offset of LO and HI, kept in registers (the retire log shows each value)."""
+    p = Prog().init_regs().li(1, CYCLE_ADDR)
+    p("LW", rd=2, rs1=1, imm=0)("LW", rd=3, rs1=1, imm=0)            # consecutive cycles
+    for _ in range(5):
+        p("ADDI", rd=4, rs1=4, imm=1)
+    p("LW", rd=3, rs1=1, imm=0)("LW", rd=5, rs1=1, imm=4)            # HI is 0
+    for off in range(4):
+        p("LB", rd=6, rs1=1, imm=off)("LBU", rd=6, rs1=1, imm=off)
+    for off in (0, 2, 4, 6):
+        p("LH", rd=7, rs1=1, imm=off)("LHU", rd=7, rs1=1, imm=off)
+    return _end(p)("ECALL").image()
+
+
 def prog_random() -> dict[int, int]:
     image = random_program().image()
     for off in range(-0x800, 0x800, 4):
@@ -177,6 +192,13 @@ SOC_RUNS = [
     Run("bus_store_above_ram", prog_stop(lambda p: p.li(1, MEM_END).li(2, -1)("SW", rs1=1, rs2=2, imm=0)),
         expect={"cause": "STOP_BUS_ERROR"}),
     Run("bus_store_below_ram", prog_stop(lambda p: p.li(1, MEM_BASE - 4).li(2, -1)("SW", rs1=1, rs2=2, imm=0)),
+        expect={"cause": "STOP_BUS_ERROR"}),
+    Run("cycle_counter", prog_cycle, expect={"cause": "STOP_ECALL", "done": True, "tohost": 1}),
+    Run("bus_store_cycle", prog_stop(lambda p: p.li(1, CYCLE_ADDR)("SW", rs1=1, rs2=1, imm=0)),
+        expect={"cause": "STOP_BUS_ERROR"}),
+    Run("bus_store_cycle_hi", prog_stop(lambda p: p.li(1, CYCLE_ADDR + 4)("SB", rs1=1, rs2=1, imm=3)),
+        expect={"cause": "STOP_BUS_ERROR"}),
+    Run("bus_load_after_cycle", prog_stop(lambda p: p.li(1, CYCLE_ADDR + 8)("LW", rd=2, rs1=1, imm=0)),
         expect={"cause": "STOP_BUS_ERROR"}),
     Run("ifetch_console", prog_stop(lambda p: p.li(1, CONSOLE_ADDR)("JALR", rd=0, rs1=1, imm=0)),
         expect={"cause": "STOP_IFETCH_ERROR"}),

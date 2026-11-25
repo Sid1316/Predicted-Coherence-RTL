@@ -93,6 +93,7 @@ Run `make help` for the current list. Targets marked *not implemented* print the
 | `make asm [TESTS="t00 e01"]` | M3 | Build and run the directed tests in `sw/asm/`, checking each against its `// expect:` header and the Python model |
 | `make c [TESTS="hello"]` | M4 | Build and run the C programs in `sw/c/` (crt0, rvlib, libgcc), checked the same way |
 | `make progs` | M4 | Both of the above |
+| `make bench [JOBS=8]` | M7 | Dhrystone, CoreMark and an Embench subset (`sw/bench/`), each checked by its own result check and against the model trace, then `scripts/stats.py` |
 | `make sim PROG=sw/c/hello` | M3/M4 | Build, convert and run one program (`sw/c/<prog>` or `sw/asm/<test>`), showing its console output; `WAVES=1`, `SEED=` |
 | `make spike PROG=...` | M6 | Run one program on Spike |
 | `make compare PROG=...` | M6 | RTL vs. Spike lockstep comparison |

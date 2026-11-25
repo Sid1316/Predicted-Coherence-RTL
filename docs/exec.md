@@ -197,17 +197,19 @@ Each block gets a cocotb test in `tb/unit/test_<block>.py`, with randomized chec
 **Status: M6.1-M6.4 done (2026-11-25), against the Python reference model (§8).** `scripts/trace_compare.py` compares pc, insn, rd/rd_wdata and stored bytes, reads retire logs and Spike `--log-commits` (the Spike parser is tested on hand-written samples only; it meets a real Spike log when Spike runs in CI). Every directed, C, `rv32ui` and arch test is compared with the model instruction by instruction (`make progs`, `make riscv-tests`, `make riscof`). `scripts/randgen.py` + `scripts/run_random.py` (`make random`): seeds 1-1000 all match the model, 547k instructions, every RV32I instruction and every stop cause covered; an injected BGE bug (equal operands not taken) fails on 4 of the first 6 seeds. Open: M6.5, M6.6, and the Spike run in CI.
 
 ### M7: Programs, benchmarks and profiling (M)
-- [ ] **M7.1** Port and run: Dhrystone, CoreMark (rv32i build, multiply/divide in libgcc), and a small Embench subset. All must pass lockstep comparison.
-- [ ] **M7.2** `scripts/stats.py` on retire logs, per benchmark:
+- [x] **M7.1** Port and run: Dhrystone, CoreMark (rv32i build, multiply/divide in libgcc), and a small Embench subset. All must pass lockstep comparison.
+- [x] **M7.2** `scripts/stats.py` on retire logs, per benchmark:
   - instruction mix by class (ALU, load, store, branch, jump, upper-immediate)
   - percentage of branches taken / not taken, forward vs. backward
   - **load-use pairs** (a load followed directly by an instruction that reads its `rd`)
   - **back-to-back RAW dependencies** at distance 1, 2 and 3
   - share of time in `libgcc` multiply/divide routines
   - code size (`.text`) and data footprint
-- [ ] **M7.3** Record the cycle counts (= instruction counts at CPI 1) as the performance baseline.
+- [x] **M7.3** Record the cycle counts (= instruction counts at CPI 1) as the performance baseline.
 
 **Exit criteria:** all benchmarks run correctly; the stats table is in `phase1-report.md`.
+
+**Status: done (2026-11-25).** `make bench` runs Dhrystone 2.2, CoreMark 1.01 and five Embench 1.0 programs (crc32, huffbench, nettle-sha256, statemate, ud). Each passes its own result check and matches the reference model trace. Baseline: 1.03 DMIPS/MHz, 1.39 CoreMark/MHz. Stats are in `docs/phase1-report.md`. Timing uses a new sim-only `CYCLE` MMIO counter, since the core has no CSRs (spec R-13). The Embench subset leaves out `edn` and `matmult-int`: more than 30M cycles with software multiply, too slow to replay on the Python model (about 50k instructions/s).
 
 ### M8: Synthesis characterization (S–M)
 - [ ] **M8.1** Yosys synthesis of `rv_core` alone, with memories outside the core as top-level ports, for one FPGA family (e.g. Lattice ECP5 via nextpnr, or Xilinx 7-series via Vivado if available).

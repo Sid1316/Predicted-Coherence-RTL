@@ -97,7 +97,7 @@ define need_prog
 @if [ -z "$(PROG)" ]; then echo "$@: set PROG=<path to program>, e.g. PROG=sw/c/hello or PROG=sw/asm/t00_lui_addi"; exit 2; fi
 endef
 
-.PHONY: help check-env lint unit sim-build sim-test asm c progs sim spike compare riscv-tests riscof random regress syn clean
+.PHONY: help check-env lint unit sim-build sim-test asm c progs bench sim spike compare riscv-tests riscof random regress syn clean
 
 help: ## List the targets
 	@echo "Usage: make <target> [VAR=value ...]"
@@ -127,6 +127,7 @@ sim-build: $(SIM_EXE) ## Build the Verilator simulator (build/sim/Vrv_soc_sim)
 sim-test: $(SIM_EXE) ## Check the Verilator harness against the Python model (M3.4)
 	$(PYTHON) $(ROOT)/tb/sim/test_tb_top.py $(SIM_EXE)
 	$(PYTHON) $(ROOT)/tb/sim/test_trace_compare.py
+	$(PYTHON) $(ROOT)/tb/sim/test_stats.py
 
 # Programs are built by scripts/run_progs.py (one place for the compiler
 # flags, spec §12), which also checks each against its header and the model.
@@ -140,6 +141,14 @@ c: $(SIM_EXE) ## Build and run the C programs in sw/c/ (M4): make c [TESTS="hell
 
 progs: $(SIM_EXE) ## Build and run every program in sw/asm/ and sw/c/
 	$(RUN_PROGS) asm c
+
+# Benchmarks (M7): Dhrystone, CoreMark and an Embench subset, each checked by
+# its own result check and against the model trace; then the statistics.
+# The model replays every instruction (about 60k per second), hence -j.
+JOBS ?= 8
+bench: $(SIM_EXE) ## Benchmarks (sw/bench/) vs. the model, then scripts/stats.py: make bench [JOBS=8]
+	$(RUN_PROGS) -j $(JOBS) bench
+	$(PYTHON) $(ROOT)/scripts/stats.py --bench
 
 # make sim HEX=<file> [TOHOST=<hex>] [MAX_CYCLES=<n>] [SEED=<n>] [WAVES=1] [RETIRE_LOG=<file>]
 # runs a ready-made image. make sim PROG=sw/asm/<test> or PROG=sw/c/<prog>
@@ -181,7 +190,7 @@ START ?= 1
 random: $(SIM_EXE) ## Random programs vs. the reference model: make random [SEEDS=200] [START=1]
 	$(PYTHON) $(ROOT)/scripts/run_random.py --exe $(SIM_EXE) --seeds $(SEEDS) --start $(START)
 
-regress: lint unit sim-test progs riscv-tests riscof random ## Full regression (filled in at M9.1)
+regress: lint unit sim-test progs riscv-tests riscof random bench ## Full regression (filled in at M9.1)
 	@echo "regress: all stages passed (random: $(SEEDS) seeds from $(START))"
 
 syn: ## Yosys synthesis of rv_core
