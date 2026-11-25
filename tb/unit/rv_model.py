@@ -279,3 +279,111 @@ def lsu_ref(*, size_name: str, unsigned: int, mem_read: int, mem_write: int, ena
         "misaligned": int(bool(enable and is_mem and mis)),
         "bus_err": int(valid and bool(err)),
     }
+
+
+# ---------------------------------------------------------------------------
+# Decoder (spec §4, §4.2, §6.3, §7)
+# ---------------------------------------------------------------------------
+# The expected values come from the tables in docs/spec.md, parsed at import
+# time, so the spec and the test cannot drift apart (exec.md M2.6).
+
+import re
+from pathlib import Path
+
+SPEC_PATH = Path(__file__).resolve().parents[2] / "docs" / "spec.md"
+
+# Remaining enums, in declaration order (spec §8.2)
+OPA_SELS = {"OPA_RS1": 0, "OPA_PC": 1, "OPA_ZERO": 2}
+OPB_SELS = {"OPB_RS2": 0, "OPB_IMM": 1}
+WB_SELS = {"WB_ALU": 0, "WB_MEM": 1, "WB_PC4": 2}
+
+DASH = "—"
+
+
+def _md_table(text: str, header_prefix: str) -> list[list[str]]:
+    """Rows (cells stripped of backticks) of the markdown table whose header starts with header_prefix."""
+    lines = text.splitlines()
+    start = next(i for i, ln in enumerate(lines) if ln.startswith(header_prefix))
+    header = [c.strip().strip("`") for c in lines[start].strip().strip("|").split("|")]
+    rows = []
+    for ln in lines[start + 2:]:
+        if not ln.startswith("|"):
+            break
+        # "\|" inside a cell is an escaped pipe, not a column separator
+        cells = [c.strip().replace("`", "") for c in re.split(r"(?<!\\)\|", ln.strip().strip("|"))]
+        assert len(cells) == len(header), f"bad row in spec table: {ln}"
+        rows.append(dict(zip(header, cells)))
+    return rows
+
+
+def _encoding_rules(spec: str) -> dict[str, dict]:
+    """§4 table -> {instr: {"mask": m, "match": v}}: inst & mask == match means this instruction."""
+    rules = {}
+    for row in _md_table(spec, "| # | Instr | Fmt"):
+        mask, match = 0x7F, int(row["opcode"], 2)
+        if row["funct3"] != DASH:
+            mask |= 0x7 << 12
+            match |= int(row["funct3"], 2) << 12
+        f7 = row["funct7 / imm"]
+        if re.fullmatch(r"[01]{7}", f7):
+            mask |= 0x7F << 25
+            match |= int(f7, 2) << 25
+        else:
+            # e.g. "imm=1, rs1=0, rd=0" (ECALL/EBREAK) or "any fm/pred/succ" (FENCE)
+            fields = {"imm": (31, 20), "rs1": (19, 15), "rd": (11, 7)}
+            for name, value in re.findall(r"(\w+)=(\d+)", f7):
+                hi, lo = fields[name]
+                mask |= ((1 << (hi - lo + 1)) - 1) << lo
+                match |= int(value) << lo
+            assert f7 == DASH or f7.startswith("any") or "=" in f7, f"unparsed §4 cell: {f7}"
+        rules[row["Instr"]] = {"mask": mask, "match": match}
+    return rules
+
+
+_CTRL_ENUMS = {
+    "imm": ("imm_type", "IMM_", IMM_TYPES),
+    "op_a": ("op_a_sel", "OPA_", OPA_SELS),
+    "op_b": ("op_b_sel", "OPB_", OPB_SELS),
+    "alu_op": ("alu_op", "ALU_", ALU_OPS),
+    "wb_sel": ("wb_sel", "WB_", WB_SELS),
+    "mem_size": ("mem_size", "MEM_", MEM_SIZES),
+}
+_CTRL_BITS = {"reg_write": "reg_write", "mem_read": "mem_read", "mem_write": "mem_write",
+              "mem_uns": "mem_unsigned", "branch": "branch", "jump": "jump", "jalr": "jalr"}
+
+
+def _control_table(spec: str) -> dict[str, dict[str, int]]:
+    """§7 table -> {instr: ctrl_t field values}; "—" is 0 (first enum value)."""
+    table = {}
+    for row in _md_table(spec, "| Instr | `imm`"):
+        ctrl = {name: 0 for name, _ in CTRL_FIELDS}
+        for col, (field, prefix, enum) in _CTRL_ENUMS.items():
+            if row[col] != DASH:
+                ctrl[field] = enum[prefix + row[col]]
+        for col, field in _CTRL_BITS.items():
+            if row[col] != DASH:
+                ctrl[field] = int(row[col])
+        for name, value in re.findall(r"(\w+)=(\w+)", row["Other"]):
+            ctrl[name] = BRANCH_OPS["BR_" + value] if name == "br_op" else int(value)
+        table[row["Instr"].strip("*")] = ctrl
+    return table
+
+
+_SPEC = SPEC_PATH.read_text(encoding="utf-8")
+ENCODINGS = _encoding_rules(_SPEC)
+CONTROL = _control_table(_SPEC)   # includes the "illegal" row
+INSTRS = list(ENCODINGS)
+
+
+def decode_ref(inst: int) -> tuple[str, dict[str, int]]:
+    """(instruction name or "illegal", expected ctrl_t fields) for a 32-bit word."""
+    hits = [name for name, r in ENCODINGS.items() if inst & r["mask"] == r["match"]]
+    assert len(hits) <= 1, f"{inst:#010x} matches several §4 rows: {hits}"
+    name = hits[0] if hits else "illegal"
+    return name, CONTROL[name]
+
+
+def encode(name: str, rand_bits: int) -> int:
+    """A legal word for instruction `name`, with every free bit taken from rand_bits."""
+    r = ENCODINGS[name]
+    return (rand_bits & ~r["mask"] & MASK32) | r["match"]

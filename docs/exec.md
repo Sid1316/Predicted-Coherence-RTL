@@ -150,7 +150,7 @@ Each block gets a cocotb test in `tb/unit/test_<block>.py`, with randomized chec
 - [x] **M2.3** `rv_regfile`: x0 stays 0 after writes, read-after-write timing, all 31 registers written and read back.
 - [x] **M2.4** `rv_branch_unit`: BEQ/BNE/BLT/BGE/BLTU/BGEU, signed vs. unsigned edge cases.
 - [x] **M2.5** `rv_lsu`: LB/LH/LW/LBU/LHU sign/zero extension at every byte offset; SB/SH/SW byte enables and data lane placement; misalignment detection.
-- [ ] **M2.6** `rv_decoder`: every legal RV32I encoding maps to the expected `ctrl_t`; every case in spec.md §4.2 sets `ctrl.illegal`. Generate the expected values from the control signal table (spec.md §7) so the spec and the test agree.
+- [x] **M2.6** `rv_decoder`: every legal RV32I encoding maps to the expected `ctrl_t`; every case in spec.md §4.2 sets `ctrl.illegal`. Generate the expected values from the control signal table (spec.md §7) so the spec and the test agree.
 
 **Exit criteria:** `make unit` passes; every block is lint-clean.
 
