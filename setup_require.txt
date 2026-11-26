@@ -33,6 +33,8 @@ Quick check once everything is installed (in a NEW Git Bash window):
   Python                    3.14.10 (need >= 3.10)   https://www.python.org/downloads/  (use "py")
   cocotb                    2.1.0              pip, in the project .venv (section 4)
   RISCOF                    1.25.3             pip, in the project .venv (section 4, workaround)
+  matplotlib                3.11.2             pip, in the project .venv (section 4); charts for
+                                               make eval (scripts/eval_report.py)
 
 
 2. MSYS2 PACKAGES
@@ -75,7 +77,7 @@ In Git Bash, in the repository root:
 
     py -m venv .venv
     source .venv/Scripts/activate
-    pip install cocotb
+    pip install cocotb matplotlib
 
 RISCOF workaround (Python 3.14): riscv-config pins PyYAML==5.2, which has no
 build for Python 3.14 and would need Microsoft C++ Build Tools. Install

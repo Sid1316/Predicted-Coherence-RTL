@@ -1,0 +1,33 @@
+[*]
+[*] GTKWave save file: the core signals of the evaluation report's waveform
+[*] (scripts/eval_report.py). Use with any wave file from make sim ... WAVES=1:
+[*]   gtkwave build/sim/waves.vcd sim/waves.gtkw
+[*]
+[dumpfile] "build/sim/waves.vcd"
+[timestart] 0
+[size] 1600 800
+[sst_width] 240
+[signals_width] 220
+[sst_expanded] 1
+@28
+TOP.rv_soc_sim.u_core.clk_i
+TOP.rv_soc_sim.u_core.rst_i
+@22
+TOP.rv_soc_sim.u_core.pc[31:0]
+TOP.rv_soc_sim.u_core.inst[31:0]
+TOP.rv_soc_sim.u_core.alu_res[31:0]
+@28
+TOP.rv_soc_sim.u_core.br_taken
+@22
+TOP.rv_soc_sim.u_core.next_pc[31:0]
+@28
+TOP.rv_soc_sim.u_core.rf_we
+@24
+TOP.rv_soc_sim.u_core.rd[4:0]
+@22
+TOP.rv_soc_sim.u_core.wb_data[31:0]
+@28
+TOP.rv_soc_sim.u_core.stop
+TOP.rv_soc_sim.u_core.halted_q
+[pattern_trace] 1
+[pattern_trace] 0

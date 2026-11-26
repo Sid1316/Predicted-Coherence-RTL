@@ -24,7 +24,11 @@ riscof_work/
 syn/out/
 
 # Editors / OS
-.vscode/
+.vscode/*
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/settings.json
 .idea/
 *.swp
 .DS_Store

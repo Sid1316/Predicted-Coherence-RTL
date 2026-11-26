@@ -1,6 +1,7 @@
 """Run random programs on the RTL and the reference model and compare them (docs/exec.md M6.4).
 
 Usage: run_random.py --exe <Vrv_soc_sim> [--seeds N] [--start S] [-j JOBS] [--keep]
+                     [--json FILE] [--no-save]
 
 For each seed in [S, S + N), and first for every saved regression test in
 tests/random/*.S:
@@ -20,10 +21,16 @@ At the end: how often each RV32I instruction retired and how the runs ended.
 With 50 or more programs, every one of the 40 RV32I instructions must have
 retired at least once, or the run fails (the generator lost coverage).
 
+--json FILE writes the summary (counts per instruction, endings, stop causes,
+failures) for scripts/evaluate.py. --no-save does not copy failing seeds to
+tests/random/; the evaluation's bug-injection runs use it, because their
+failures are expected and are not regression tests.
+
 Exit code: 0 if every program matched the model, 1 otherwise.
 """
 
 import argparse
+import json
 import os
 import shutil
 import subprocess
@@ -96,6 +103,8 @@ def main() -> int:
     ap.add_argument("--start", type=int, default=1)
     ap.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 4)
     ap.add_argument("--keep", action="store_true", help="keep the work files of passing programs")
+    ap.add_argument("--json", type=Path, help="write the summary to this file (scripts/evaluate.py)")
+    ap.add_argument("--no-save", action="store_true", help="do not save failing seeds to tests/random/")
     args = ap.parse_args()
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     if not args.exe.exists():
@@ -120,7 +129,7 @@ def main() -> int:
             results.append(r)
             if not r["ok"]:
                 print(f"  FAIL  {r['name']}: " + "\n    ".join(r["problems"]))
-                if r["name"].startswith("seed_"):
+                if r["name"].startswith("seed_") and not args.no_save:
                     REGRESS.mkdir(parents=True, exist_ok=True)
                     dest = REGRESS / f"{r['name']}.S"
                     if not dest.exists():
@@ -151,6 +160,17 @@ def main() -> int:
         status = 1
     else:
         print(f"run_random: all {len(results)} programs match the model")
+    if args.json:
+        args.json.parent.mkdir(parents=True, exist_ok=True)
+        args.json.write_text(json.dumps({
+            "programs": len(results), "saved_regressions": n_regress,
+            "seeds": [args.start, args.start + args.seeds - 1],
+            "instructions": sum(insns.values()),
+            "per_instruction": {n: insns[n] for n in names}, "illegal": insns["illegal"],
+            "endings": dict(sorted(ends.items())), "stop_causes": dict(sorted(causes.items())),
+            "never_retired": missing, "failed": sorted(r["name"] for r in failed),
+            "status": status,
+        }, indent=2) + "\n", encoding="utf-8")
     return status
 
 

@@ -1,0 +1,184 @@
+{
+  "version": "2.0.0",
+  "options": {
+    "cwd": "${workspaceFolder}",
+    "shell": {
+      "executable": "C:\\Program Files\\Git\\bin\\bash.exe",
+      "args": ["-lc"]
+    }
+  },
+  "presentation": { "reveal": "always", "panel": "dedicated", "clear": true },
+  "tasks": [
+    {
+      "label": "eval: whole pipeline, quick (about 14 min)",
+      "type": "shell",
+      "command": "make eval PROFILE=quick",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "eval: whole pipeline, full (about 37 min)",
+      "type": "shell",
+      "command": "make eval PROFILE=full",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "01 env: check tools and versions",
+      "type": "shell",
+      "command": "make check-env",
+      "problemMatcher": []
+    },
+    {
+      "label": "02 lint: Verilator -Wall (rv_core as top)",
+      "type": "shell",
+      "command": "make lint",
+      "problemMatcher": {
+        "owner": "verilator",
+        "fileLocation": "absolute",
+        "pattern": {
+          "regexp": "^%(Warning|Error)-?(\\w*): (.*?):(\\d+):(\\d+): (.*)$",
+          "severity": 1,
+          "code": 2,
+          "file": 3,
+          "line": 4,
+          "column": 5,
+          "message": 6
+        }
+      }
+    },
+    {
+      "label": "03 unit: all blocks (cocotb on Icarus)",
+      "type": "shell",
+      "command": "make unit",
+      "problemMatcher": []
+    },
+    {
+      "label": "03 unit: one block with waveform",
+      "type": "shell",
+      "command": "make unit BLOCKS=${input:block} WAVES=1 && echo && echo \"waveform: $(ls build/unit/${input:block}/*.fst 2>/dev/null | head -1)\"",
+      "problemMatcher": []
+    },
+    {
+      "label": "04 sim-build: Verilator simulator",
+      "type": "shell",
+      "command": "make sim-build",
+      "problemMatcher": []
+    },
+    {
+      "label": "05 harness: harness, trace-compare, stats and pipeline parser tests",
+      "type": "shell",
+      "command": "make sim-test",
+      "problemMatcher": []
+    },
+    {
+      "label": "06 asm: directed tests",
+      "type": "shell",
+      "command": "make asm",
+      "problemMatcher": []
+    },
+    {
+      "label": "07 c: C programs",
+      "type": "shell",
+      "command": "make c",
+      "problemMatcher": []
+    },
+    {
+      "label": "08 rv32ui: riscv-tests (with waivers)",
+      "type": "shell",
+      "command": "make riscv-tests",
+      "problemMatcher": []
+    },
+    {
+      "label": "09 riscof: riscv-arch-test rv32i_m/I",
+      "type": "shell",
+      "command": "make riscof && echo && echo 'RISCOF report: build/riscof/report.html'",
+      "problemMatcher": []
+    },
+    {
+      "label": "10 random: random programs vs. the model",
+      "type": "shell",
+      "command": "make sim-build && .venv/Scripts/python.exe scripts/run_random.py --exe build/sim/Vrv_soc_sim.exe --seeds ${input:seeds} --json build/random.json && echo 'summary: build/random.json'",
+      "problemMatcher": []
+    },
+    {
+      "label": "11 bench: benchmarks, scores and profile",
+      "type": "shell",
+      "command": "make bench",
+      "problemMatcher": []
+    },
+    {
+      "label": "12 syn: ECP5 synthesis (slow)",
+      "type": "shell",
+      "command": "make syn && echo && echo 'report: syn/reports/summary.md'",
+      "problemMatcher": []
+    },
+    {
+      "label": "13 one program, with retire log and waveform",
+      "type": "shell",
+      "command": "make sim PROG=${input:prog} WAVES=1 && echo && echo 'waveform: build/sim/waves.vcd (open it to view it with Surfer)' && echo \"retire log, disassembly: build/$(basename $(dirname ${input:prog}))/$(basename ${input:prog}).{retire.log,dis}\"",
+      "problemMatcher": []
+    },
+    {
+      "label": "13 open the last waveform in GTKWave (saved signal layout)",
+      "type": "shell",
+      "command": "gtkwave build/sim/waves.vcd sim/waves.gtkw &",
+      "problemMatcher": []
+    },
+    {
+      "label": "14 inject one bug and run the checks on it",
+      "type": "shell",
+      "command": ".venv/Scripts/python.exe scripts/evaluate.py --only-mutant ${input:mutant}",
+      "problemMatcher": []
+    },
+    {
+      "label": "15 re-render the report of a run",
+      "type": "shell",
+      "command": ".venv/Scripts/python.exe scripts/evaluate.py --report-only ${input:rundir}",
+      "problemMatcher": []
+    },
+    {
+      "label": "15 open the latest report in the browser",
+      "type": "shell",
+      "command": "start build/eval/latest/report.html",
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "block",
+      "type": "pickString",
+      "description": "Unit-test block",
+      "options": ["rv_alu", "rv_imm_gen", "rv_regfile", "rv_branch_unit", "rv_lsu", "rv_decoder", "rv_pc",
+                  "rv_core", "rv_mem_model", "rv_soc_sim"],
+      "default": "rv_alu"
+    },
+    {
+      "id": "prog",
+      "type": "promptString",
+      "description": "Program: sw/asm/<test> or sw/c/<prog>",
+      "default": "sw/asm/t04_branch"
+    },
+    {
+      "id": "seeds",
+      "type": "promptString",
+      "description": "Number of random seeds",
+      "default": "200"
+    },
+    {
+      "id": "mutant",
+      "type": "pickString",
+      "description": "Injected bug (scripts/eval_mutants.py)",
+      "options": ["null", "alu_sra_logical", "alu_sltu_signed", "branch_bge_unsigned", "imm_b_bit11",
+                  "lsu_lb_zero_extend", "regfile_we_ignored", "pc_jalr_bit0", "decoder_sub_as_add",
+                  "regfile_x0_writable"],
+      "default": "alu_sra_logical"
+    },
+    {
+      "id": "rundir",
+      "type": "promptString",
+      "description": "Run directory (build/eval/<run id>)",
+      "default": "build/eval/"
+    }
+  ]
+}

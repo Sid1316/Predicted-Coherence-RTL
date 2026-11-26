@@ -1,0 +1,88 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug: evaluate.py quick, without injected bugs",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/evaluate.py",
+      "args": ["--profile", "quick", "--no-mutants"],
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Debug: evaluate.py, one injected bug",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/evaluate.py",
+      "args": ["--only-mutant", "${input:mutant}"],
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Debug: re-render a report (eval_report.py)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/eval_report.py",
+      "args": ["${input:rundir}"],
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Debug: run_progs.py, one program vs. the model",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/run_progs.py",
+      "args": ["--exe", "build/sim/Vrv_soc_sim.exe", "-v", "${input:prog}"],
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Debug: run_random.py, 5 seeds",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/run_random.py",
+      "args": ["--exe", "build/sim/Vrv_soc_sim.exe", "--seeds", "5", "-j", "1", "--no-save"],
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Debug: test_evaluate.py (pipeline parser checks)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/tb/sim/test_evaluate.py",
+      "python": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "prog",
+      "type": "promptString",
+      "description": "Program name or path (t04_branch, hello, rv32ui-p-add, sw/asm/t00_lui_addi)",
+      "default": "t04_branch"
+    },
+    {
+      "id": "mutant",
+      "type": "pickString",
+      "description": "Injected bug (scripts/eval_mutants.py)",
+      "options": ["null", "alu_sra_logical", "alu_sltu_signed", "branch_bge_unsigned", "imm_b_bit11",
+                  "lsu_lb_zero_extend", "regfile_we_ignored", "pc_jalr_bit0", "decoder_sub_as_add",
+                  "regfile_x0_writable"],
+      "default": "alu_sra_logical"
+    },
+    {
+      "id": "rundir",
+      "type": "promptString",
+      "description": "Run directory (build/eval/<run id>)",
+      "default": "build/eval/"
+    }
+  ]
+}

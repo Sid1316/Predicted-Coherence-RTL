@@ -1,0 +1,13 @@
+{
+  "terminal.integrated.defaultProfile.windows": "Git Bash",
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+  "files.eol": "\n",
+  "files.associations": {
+    "*.retire.log": "log"
+  },
+  "search.exclude": {
+    "build/**": true,
+    "tests/riscv-arch-test/**": true,
+    "tests/riscv-tests/**": true
+  }
+}

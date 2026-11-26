@@ -1,0 +1,10 @@
+{
+  "recommendations": [
+    "ms-python.python",
+    "ms-python.debugpy",
+    "mshr-h.veriloghdl",
+    "surfer-project.surfer",
+    "teros-technology.teroshdl",
+    "ms-vscode.live-server"
+  ]
+}

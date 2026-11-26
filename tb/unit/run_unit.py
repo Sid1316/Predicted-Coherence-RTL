@@ -78,6 +78,7 @@ def run_block(block: str, waves: bool) -> tuple[int, int]:
             hdl_toplevel=block,
             build_dir=build_dir,
             test_dir=TEST_DIR,
+            results_xml=str(build_dir / "results.xml"),   # per block; the default is shared by all blocks
             waves=waves,
         )
         return get_results(results)

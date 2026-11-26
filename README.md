@@ -107,5 +107,6 @@ Run `make help` for the current list. Targets marked *not implemented* print the
 | `make riscof` | M5 | riscv-arch-test `rv32i_m/I` (39 tests) via RISCOF: DUT on a 2 MiB-RAM simulator (`build/sim-2097152/`) vs. the Python reference model |
 | `make random [SEEDS=200] [START=1]` | M6 | Random programs (`scripts/randgen.py`) on the RTL vs. the Python reference model, trace by trace; failing seeds are saved in `tests/random/`; prints instruction and stop-cause coverage |
 | `make regress` | M9 | Everything, in order |
+| `make eval` | - | Evaluation report: every check, a self-check with injected RTL bugs, charts, a waveform and `build/eval/latest/report.html`. `PROFILE=quick` (about 14 min) or `PROFILE=full` (about 37 min; adds RISCOF, benchmarks, synthesis and the full bug-catching matrix). Each stage by hand, in VS Code, GTKWave or Surfer: [docs/evaluation-manual.md](docs/evaluation-manual.md) |
 | `make syn [SYN_SEEDS=3]` | M8 | sv2v + Yosys + nextpnr-ecp5: area, Fmax and critical path by stage of `rv_core`; report in `syn/reports/summary.md` |
 | `make clean` | M0 | Remove build output |

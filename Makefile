@@ -78,7 +78,10 @@ SIM_FLAGS    := --cc --exe --build -j 0 -Wall --quiet --top-module rv_soc_sim \
                 --timescale 1ns/1ns --assert --x-assign unique --x-initial unique --trace-$(WAVE_FMT) \
                 -CFLAGS "-O2 -DVL_USER_STOP -DVL_USER_FATAL -DMEM_SIZE_BYTES=$(MEM_SIZE_BYTES) -DDPI_DLLISPEC=" \
                 --MAKEFLAGS "PYTHON3=$(PYTHON)" \
-                --Mdir $(SIM_DIR) -o $(notdir $(SIM_EXE))
+                --Mdir $(SIM_DIR) -o $(notdir $(SIM_EXE)) $(SIM_EXTRA)
+# Extra Verilator flags, e.g. SIM_EXTRA=-Wno-fatal for the evaluation's
+# bug-injected builds (scripts/evaluate.py), which lint checks separately.
+SIM_EXTRA    ?=
 # make sim HEX=... options
 MAX_CYCLES ?=
 SEED       ?=
@@ -97,7 +100,7 @@ define need_prog
 @if [ -z "$(PROG)" ]; then echo "$@: set PROG=<path to program>, e.g. PROG=sw/c/hello or PROG=sw/asm/t00_lui_addi"; exit 2; fi
 endef
 
-.PHONY: help check-env lint unit sim-build sim-test asm c progs bench sim spike compare riscv-tests riscof random regress syn clean
+.PHONY: help check-env lint unit sim-build sim-test asm c progs bench sim spike compare riscv-tests riscof random regress eval syn clean
 
 help: ## List the targets
 	@echo "Usage: make <target> [VAR=value ...]"
@@ -128,6 +131,7 @@ sim-test: $(SIM_EXE) ## Check the Verilator harness against the Python model (M3
 	$(PYTHON) $(ROOT)/tb/sim/test_tb_top.py $(SIM_EXE)
 	$(PYTHON) $(ROOT)/tb/sim/test_trace_compare.py
 	$(PYTHON) $(ROOT)/tb/sim/test_stats.py
+	$(PYTHON) $(ROOT)/tb/sim/test_evaluate.py
 
 # Programs are built by scripts/run_progs.py (one place for the compiler
 # flags, spec §12), which also checks each against its header and the model.
@@ -192,6 +196,14 @@ random: $(SIM_EXE) ## Random programs vs. the reference model: make random [SEED
 
 regress: lint unit sim-test progs riscv-tests riscof random bench ## Full regression (filled in at M9.1)
 	@echo "regress: all stages passed (random: $(SEEDS) seeds from $(START))"
+
+# Evaluation pipeline (scripts/evaluate.py): every check plus a self-check with
+# injected RTL bugs, collected into build/eval/<run>/results.json, charts,
+# a waveform image and report.html (copy in build/eval/latest/).
+PROFILE ?= quick
+eval: ## Evaluation report with charts: make eval [PROFILE=quick|full] [SYN=1] [MUTANTS=0] [JOBS=8]
+	$(PYTHON) $(ROOT)/scripts/evaluate.py --profile $(PROFILE) --jobs $(JOBS) $(if $(SYN),--syn) \
+	  $(if $(filter 0,$(MUTANTS)),--no-mutants)
 
 # Synthesis characterization (M8): sv2v -> yosys synth_ecp5 -> nextpnr-ecp5,
 # report in syn/reports/. Needs sv2v (SV2V=...) and MSYS2's yosys and nextpnr.
